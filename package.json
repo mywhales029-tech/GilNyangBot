@@ -5,6 +5,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+<<<<<<< HEAD
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mywhales029-tech/GilNyangBot.git"
@@ -16,6 +17,11 @@
     "url": "https://github.com/mywhales029-tech/GilNyangBot/issues"
   },
   "homepage": "https://github.com/mywhales029-tech/GilNyangBot#readme",
+=======
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+>>>>>>> 477a2e3 (중복 import 제거 및 index.js 상단 정리)
   "description": "",
   "dependencies": {
     "discord.js": "^14.23.2",
