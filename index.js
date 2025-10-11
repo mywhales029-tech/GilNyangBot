@@ -257,6 +257,7 @@ client.on("messageCreate",async message=>{
           });
 
           // 버튼 클릭 이벤트 처리 (명령어 실행자만 허용)
+          if (warningMsg.collector) warningMsg.collector.stop();
           const collector = warningMsg.createMessageComponentCollector({ time: 15000, max: 1, filter: i => i.user.id === author.id });
 
           collector.on("collect", async i => {
