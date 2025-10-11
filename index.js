@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { readFileSync } from "fs"; // ES 모듈 기준
+import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import DiscordJS, {
@@ -15,29 +15,29 @@ import DiscordJS, {
 import fs from 'fs';
 import path from 'path';
 
-// 현재 파일 기준으로 package.json 경로 지정
+// === 현재 파일 및 package.json 경로 ===
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const packageJsonPath = join(__dirname, "package.json");
 
+// === package.json에서 버전 읽기 ===
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 const botVersion = packageJson.version;
 
 // === 환경 변수 ===
 const TOKEN = process.env.BOT_TOKEN;
-const INTRO_CHANNEL_ID = process.env.INTRO_CHANNEL_ID;      // 자기소개 채널 ID (메시지 작성 감시)
-const DEV_LOG_CHANNEL_ID = process.env.DEV_LOG_CHANNEL_ID; // 오류/개발 로그 채널
-const WELCOME_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID; // 환영 메시지 보낼 채널
-const NOTICE_CHANNEL_ID = process.env.NOTICE_CHANNEL_ID;   // 공지 보낼 채널 (옵션)
+const INTRO_CHANNEL_ID = process.env.INTRO_CHANNEL_ID;
+const DEV_LOG_CHANNEL_ID = process.env.DEV_LOG_CHANNEL_ID;
+const WELCOME_CHANNEL_ID = process.env.WELCOME_CHANNEL_ID;
+const NOTICE_CHANNEL_ID = process.env.NOTICE_CHANNEL_ID;
 
-// === 개발자 포인트 조정 ===
-const DEV_IDS = ["937280891967918120"]; // 개발자 ID 배열 (예시)
+// === 개발자 ID ===
+const DEV_IDS = ["937280891967918120"];
 
-// === 데이터 디렉토리 ===
+// === 데이터 폴더 관리 ===
 const baseDataDir = path.join(__dirname, "data");
 if (!fs.existsSync(baseDataDir)) fs.mkdirSync(baseDataDir, { recursive: true });
 
-// 기본 템플릿 (defaultRole은 객체로 관리)
 const defaultDataTemplates = {
   points: {},
   attendance: {},
@@ -51,248 +51,165 @@ const defaultDataTemplates = {
 function ensureServerData(guildId) {
   const guildDir = path.join(baseDataDir, guildId);
   if (!fs.existsSync(guildDir)) fs.mkdirSync(guildDir, { recursive: true });
-  for (const [key, defaultContent] of Object.entries(defaultDataTemplates)) {
-    const filePath = path.join(guildDir, `${key}.json`);
-    if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, JSON.stringify(defaultContent, null, 2));
-    else {
-      // 빈 파일 보호
-      const content = fs.readFileSync(filePath, "utf8").trim();
-      if (!content) fs.writeFileSync(filePath, JSON.stringify(defaultContent, null, 2));
-    }
+  for (const [key, template] of Object.entries(defaultDataTemplates)) {
+    const file = path.join(guildDir, `${key}.json`);
+    if (!fs.existsSync(file)) fs.writeFileSync(file, JSON.stringify(template, null, 2));
+    else if (!fs.readFileSync(file, "utf8").trim()) fs.writeFileSync(file, JSON.stringify(template, null, 2));
   }
 }
-function loadData(guildId, key) { ensureServerData(guildId); return JSON.parse(fs.readFileSync(path.join(baseDataDir, guildId, `${key}.json`), "utf8")); }
-function saveData(guildId, key, data) { ensureServerData(guildId); fs.writeFileSync(path.join(baseDataDir, guildId, `${key}.json`), JSON.stringify(data, null, 2)); }
-
-
+function loadData(guildId, key) {
+  ensureServerData(guildId);
+  return JSON.parse(fs.readFileSync(path.join(baseDataDir, guildId, `${key}.json`), "utf8"));
+}
+function saveData(guildId, key, data) {
+  ensureServerData(guildId);
+  fs.writeFileSync(path.join(baseDataDir, guildId, `${key}.json`), JSON.stringify(data, null, 2));
+}
 
 // === 봇 자산 ===
 const BOT_ASSET_KEY = "botAsset";
 const DEFAULT_BOT_ASSET = 3983896076;
 function getBotAsset(guildId) {
-  const pointsData = loadData(guildId, "points");
-  if (!pointsData[BOT_ASSET_KEY]) pointsData[BOT_ASSET_KEY] = DEFAULT_BOT_ASSET;
-  saveData(guildId, "points", pointsData);
-  return pointsData[BOT_ASSET_KEY];
+  const data = loadData(guildId, "points");
+  if (!data[BOT_ASSET_KEY]) data[BOT_ASSET_KEY] = DEFAULT_BOT_ASSET;
+  saveData(guildId, "points", data);
+  return data[BOT_ASSET_KEY];
 }
 function setBotAsset(guildId, amount) {
-  const pointsData = loadData(guildId, "points");
-  pointsData[BOT_ASSET_KEY] = amount;
-  saveData(guildId, "points", pointsData);
+  const data = loadData(guildId, "points");
+  data[BOT_ASSET_KEY] = amount;
+  saveData(guildId, "points", data);
 }
 
+// === 아이템 강화 확률 ===
+const ITEM_GRADES = ["하급","일반","고급","희귀","영웅","전설","신화"];
+function getUpgradeSuccessRate(p){ if(p<5)return 0.98;if(p<10)return 0.9;if(p<15)return 0.8;if(p<20)return 0.65;if(p<25)return 0.5;if(p<30)return 0.35;if(p<40)return 0.25;if(p<50)return 0.15;if(p<60)return 0.08;if(p<70)return 0.04;if(p<80)return 0.02;return 0.01; }
+function getDestroyChance(p){ if(p<40)return 0;if(p<50)return 0.01;if(p<60)return 0.03;if(p<70)return 0.07;if(p<80)return 0.13;if(p<90)return 0.18;return 0.25; }
+function getRandomGrade(){ return ITEM_GRADES[Math.floor(Math.random()*ITEM_GRADES.length)]; }
 
-// === 아이템 등급 및 확률 ===
-const ITEM_GRADES = [
-  "하급",        // 가장 낮은 등급
-  "일반",        // 기본
-  "고급",        // 조금 희귀
-  "희귀",        // 보기 드문 등급
-  "영웅",        // 강력한 희귀템
-  "전설",        // 최고 등급
-  "신화"         // 신적인 등급
-];
-function getUpgradeSuccessRate(currentPlus) {
-  if (currentPlus < 5) return 0.98;   // 초반: 거의 100% 성공
-  if (currentPlus < 10) return 0.9;
-  if (currentPlus < 15) return 0.8;
-  if (currentPlus < 20) return 0.65;
-  if (currentPlus < 25) return 0.5;
-  if (currentPlus < 30) return 0.35;
-  if (currentPlus < 40) return 0.25;
-  if (currentPlus < 50) return 0.15;
-  if (currentPlus < 60) return 0.08;
-  if (currentPlus < 70) return 0.04;
-  if (currentPlus < 80) return 0.02;
-  return 0.01; // +80 이상: 극악
-}
+// === 클라이언트 ===
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
-function getDestroyChance(currentPlus) {
-  if (currentPlus < 40) return 0;          // 안전구간
-  if (currentPlus < 50) return 0.01;       // 미세 확률
-  if (currentPlus < 60) return 0.03;       // 조금 위험
-  if (currentPlus < 70) return 0.07;       // 위험 구간
-  if (currentPlus < 80) return 0.13;       // 고위험
-  if (currentPlus < 90) return 0.18;       // 극한
-  return 0.25;                             // +90 이상: 거의 도박 수준
-}
+// === 반말모드 ===
+let banmalMode = false, lastBanmal=null, lastJondaet=null;
+const banmalReplies=["응","그래","응 그래","어 안녕","안녕","왜불러","ㅇㅇ","ㅇ","ㅎㅇ"];
+const jondaetReplies=["안녕하세요","반가워요","안녕하십니까?"];
+function getRandomReply(list,last){let c;do{c=list[Math.floor(Math.random()*list.length)];}while(c===last&&list.length>1);return c;}
 
-function getRandomGrade() {
-  return ITEM_GRADES[Math.floor(Math.random() * ITEM_GRADES.length)];
-}
-
-const client = new Client({
-  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
-});
-
-// === 반말 모드 ===
-let banmalMode = false, lastBanmal = null, lastJondaet = null;
-const banmalReplies = ["응","그래","응 그래","어 안녕","안녕","왜불러","ㅇㅇ","ㅇ","ㅎㅇ"];
-const jondaetReplies = ["안녕하세요","반가워요","안녕하십니까?"];
-function getRandomReply(list, lastUsed){
-  let choice;
-  do { choice = list[Math.floor(Math.random()*list.length)]; } while(choice===lastUsed && list.length>1);
-  return choice;
-}
-
-// === 오류 로그 전송 ===
-async function devLogError(guild, user, error, code="343"){
+// === 오류로그 ===
+async function devLogError(guild,user,error,code="343"){
   const ch = await client.channels.fetch(DEV_LOG_CHANNEL_ID).catch(()=>null);
-  if(!ch||!ch.isTextBased()) return;
+  if(!ch||!ch.isTextBased())return;
   const embed = new EmbedBuilder()
     .setTitle("🚨 BOT 오류 발생")
     .setColor(0xff0000)
     .addFields(
-      {name:"📌 Error Code", value:`Error Code : ${code}`},
+      {name:"📌 Error Code", value:`${code}`},
       {name:"👤 사용자", value:user?`${user.tag} (${user.id})`:"알 수 없음"},
       {name:"🏰 서버", value:guild?`${guild.name} (${guild.id})`:"알 수 없음"},
-      {name:"⚡ 오류 메시지", value:error?.message||String(error)}
-    )
-    .setTimestamp();
+      {name:"⚡ 오류 메시지", value:String(error)}
+    ).setTimestamp();
   ch.send({embeds:[embed]}).catch(()=>{});
 }
 
 // === 자기소개 검증 ===
 function validateIntro(content){
-  const lines = content.split("\n").map(l=>l.trim());
-  let fields={nick:null, age:null, gender:null, region:null};
-  for(const line of lines){
-    if(line.startsWith("디코닉:")) fields.nick=line.slice(4).trim();
-    if(line.startsWith("나이:")) fields.age=line.slice(3).trim();
-    if(line.startsWith("성별:")) fields.gender=line.slice(3).trim();
-    if(line.startsWith("지역:")) fields.region=line.slice(3).trim();
+  const lines=content.split("\n").map(l=>l.trim());
+  let fields={nick:null,age:null,gender:null,region:null};
+  for(const l of lines){
+    if(l.startsWith("디코닉:"))fields.nick=l.slice(4).trim();
+    if(l.startsWith("나이:"))fields.age=l.slice(3).trim();
+    if(l.startsWith("성별:"))fields.gender=l.slice(3).trim();
+    if(l.startsWith("지역:"))fields.region=l.slice(3).trim();
   }
-  if(!fields.nick||!fields.age||!fields.gender||!fields.region) return false;
+  if(!fields.nick||!fields.age||!fields.gender||!fields.region)return false;
   const ageRegex=/^(\d{2}년생|\d{2}살|\d{2})$/;
-  if(!ageRegex.test(fields.age)) return false;
+  if(!ageRegex.test(fields.age))return false;
   return true;
 }
 
-const statuses = [
-  { name: "강화 중...", type: 0 },
-  { name: "아이템 제작 중...", type: 0 },
-  { name: "포인트 계산 중...", type: 2 },
-  { name: "태평하게 영화", type: 3 }
+// === 봇 상태 ===
+const statuses=[
+  {name:"강화 중...",type:0},
+  {name:"아이템 제작 중...",type:0},
+  {name:"포인트 계산 중...",type:2},
+  {name:"태평하게 영화",type:3}
 ];
 
-// === 봇 준비 ===
-client.once("clientReady", () => {
+client.once("ready",()=>{
   console.log(`${client.user.tag} 로그인 완료!`);
-  let i = 0;
-  setInterval(() => {
-    const next = statuses[i % statuses.length];
-    client.user.setPresence({ activities: [next], status: "online" });
+  let i=0;
+  setInterval(()=>{
+    const next=statuses[i%statuses.length];
+    client.user.setPresence({activities:[next],status:"online"});
     i++;
-  }, 60000); // 1분마다 상태 변경
+  },60000);
 });
 
-// === 메시지 이벤트 ===
-client.on("messageCreate", async (message)=>{
+// === 메시지 처리 ===
+client.on("messageCreate",async message=>{
   try{
-    // 봇 메시지 무시
-    if (message.author.bot) return;
-
-    const { content, author, guild, channel } = message;
-    if(!guild) return; // DM 무시
-
-    const guildId = guild.id;
+    if(message.author.bot||!message.guild)return;
+    const {guild,author,content}=message;
+    const guildId=guild.id;
     ensureServerData(guildId);
 
-    // -----------------------
-    // 자기소개 채널 감시 (INTRO_CHANNEL_ID)
-    // -----------------------
-    if (INTRO_CHANNEL_ID && channel.id === INTRO_CHANNEL_ID) {
-      const joinQueue = loadData(guildId,"joinQueue");
-      const defaultRoleData = loadData(guildId,"defaultRole");
-      if(!joinQueue[author.id]) {
-        // 가입 기록이 없으면 무시
-      } else {
-        // 자기소개 처리
+    if(INTRO_CHANNEL_ID && message.channel.id===INTRO_CHANNEL_ID){
+      const joinQueue=loadData(guildId,"joinQueue");
+      const defaultRoleData=loadData(guildId,"defaultRole");
+      if(joinQueue[author.id]){
         if(validateIntro(content)){
           joinQueue[author.id].introDone=true;
           saveData(guildId,"joinQueue",joinQueue);
-          // 기본 역할 부여
-          if(defaultRoleData && defaultRoleData.id){
-            const role = message.guild.roles.cache.get(defaultRoleData.id);
-            if(role){
-              const member = await message.guild.members.fetch(author.id).catch(()=>null);
-              if(member) member.roles.add(role).catch(()=>{});
-            }
+          if(defaultRoleData?.id){
+            const role=message.guild.roles.cache.get(defaultRoleData.id);
+            const member=await message.guild.members.fetch(author.id).catch(()=>null);
+            if(role&&member)member.roles.add(role).catch(()=>{});
           }
-          await message.reply("✅ 자기소개 확인 완료. 기본 역할 지급");
-        } else {
-          await message.reply("⚠️ 양식 미준수. 기본 역할 미지급");
-        }
+          return message.reply("✅ 자기소개 확인 완료. 기본 역할 지급");
+        }else return message.reply("⚠️ 양식 미준수. 기본 역할 미지급");
       }
-      return; // INTRO 채널 메시지는 명령어 파싱하지 않음
-    }
-
-    // 명령어가 아니면 로그만 남김 (명령어 처리 전)
-    if(content.startsWith("!")){
-      // 기록용 로그 저장
-      const logs = loadData(guildId,"logs");
-      logs[author.id] = logs[author.id] || [];
-      logs[author.id].push({ time: new Date().toISOString(), message: content });
-      saveData(guildId,"logs",logs);
       return;
     }
 
-    // -----------------------
-    // 공통 데이터 로드
-    // -----------------------
-    const args = content.slice(1).trim().split(/ +/);
-    const cmd = args.shift().toLowerCase();
-
-    const pointsData = loadData(guildId,"points");
-    const attendance = loadData(guildId,"attendance");
-    const itemsData = loadData(guildId,"items");
-    const marketData = loadData(guildId,"market");
-    const logs = loadData(guildId,"logs");
-    const joinQueue = loadData(guildId,"joinQueue");
-    const defaultRoleData = loadData(guildId,"defaultRole");
-
-    // 채팅 로그 기록 (명령어 포함)
-    logs[author.id] = logs[author.id] || [];
-    logs[author.id].push({ time: new Date().toISOString(), message: content });
-    saveData(guildId,"logs",logs);
-
-    // -----------------------
     // 명령어 처리
-    // -----------------------
-    // === 냥이설명서 ===
-    if(!content.startsWith("!")){
-      const args = content.slice(1).trim().split(/ +/g);
-      const cmd = args.shift().toLowerCase();
-    
-      switch(cmd){
- 
-        case "안녕": {
-          const reply=banmalMode?getRandomReply(banmalReplies,lastBanmal):getRandomReply(jondaetReplies,lastJondaet);
-          if(banmalMode) lastBanmal=reply; else lastJondaet=reply;
-          return message.reply(reply);
-        }
-        case "반모": banmalMode=true; return message.reply("이제부터 반말로 대답할게.");
-        case "반종": banmalMode=false; return message.reply("존댓말 모드로 돌아왔습니다.");
-        case "시간": return message.reply(`현재 시간: ${new Date().toLocaleString("ko-KR")}`);
-        // EmbedBuilder 코드에 추가
-        case "길냥이봇정보": {
-          const embedInfo = new EmbedBuilder()
-            .setTitle("🤖 봇 정보")
-            .setColor(0x00aaff)
-            .addFields(
-              { name: "이름", value: client.user.username, inline: true },
-              { name: "개발일", value: "2025.10.12", inline: true },
-              { name: "소속 서버 수", value: `${client.guilds.cache.size}`, inline: true },
-              { name: "엔진", value: "NobleNetick2", inline: true },
-              { name: "언어", value: "JavaScript (Node.js)", inline: true },
-              { name: "버전", value: botVersion, inline: true } // 여기서 버전 표시
-            )
-            .setTimestamp();
+    if(!content.startsWith("!"))return;
+    const args=content.slice(1).trim().split(/ +/);
+    const cmd=args.shift().toLowerCase();
 
-          return message.reply({ embeds: [embedInfo] });
-        }
+    const pointsData=loadData(guildId,"points");
+    const attendance=loadData(guildId,"attendance");
+    const itemsData=loadData(guildId,"items");
+    const marketData=loadData(guildId,"market");
 
-        // === 개발자 포인트 ===
+    switch(cmd){
+
+      case "안녕": {
+        const reply=banmalMode?getRandomReply(banmalReplies,lastBanmal):getRandomReply(jondaetReplies,lastJondaet);
+        if(banmalMode)lastBanmal=reply;else lastJondaet=reply;
+        return message.reply(reply);
+      }
+
+      case "반모": banmalMode=true; return message.reply("이제부터 반말로 대답할게.");
+      case "반종": banmalMode=false; return message.reply("존댓말 모드로 돌아왔습니다.");
+      case "시간": return message.reply(`현재 시간: ${new Date().toLocaleString("ko-KR")}`);
+
+      case "길냥이봇정보": {
+        const embedInfo=new EmbedBuilder()
+          .setTitle("🤖 봇 정보")
+          .setColor(0x00aaff)
+          .addFields(
+            {name:"이름",value:client.user.username,inline:true},
+            {name:"개발일",value:"2025.10.12",inline:true},
+            {name:"소속 서버 수",value:`${client.guilds.cache.size}`,inline:true},
+            {name:"엔진",value:"NobleNetick2",inline:true},
+            {name:"언어",value:"JavaScript (Node.js)",inline:true},
+            {name:"버전",value:botVersion,inline:true}
+          )
+          .setTimestamp();
+        return message.reply({embeds:[embedInfo]});
+      }
+      // === 개발자 포인트 ===
         case "devpoint":{
           if(!DEV_IDS.includes(author.id)) return message.reply("⛔ 권한이 없습니다.");
           const action = args[0]; // 지급/복원
@@ -305,7 +222,6 @@ client.on("messageCreate", async (message)=>{
           saveData(guildId,"points",pointsData);
           return message.reply(`✅ <@${targetId}>님 포인트 ${action} 완료`);
         }
-
         // === 출석 ===
         case "출석":{
           const userId=author.id;
@@ -318,7 +234,6 @@ client.on("messageCreate", async (message)=>{
           saveData(guildId,"points",pointsData);
           return message.reply("✅ 출석 완료! 2000 포인트 획득");
         }
-
         // === 포인트 조회/랭킹 ===
         case "포인트": return message.reply(`💰 현재 포인트: ${(pointsData[author.id]?.points||0).toLocaleString()}pt`);
         case "포인트랭킹":{
@@ -330,7 +245,6 @@ client.on("messageCreate", async (message)=>{
             .join("\n")||"랭킹 데이터가 없습니다.";
           return message.reply(`🏆 포인트 상위 10위\n${ranking}`);
         }
-
         // === 시공의폭풍 (채널 전체 삭제) ===
         case "시공의폭풍": {
           // 경고 + 버튼
@@ -379,7 +293,6 @@ client.on("messageCreate", async (message)=>{
 
           return;
         }
-
         // === 맨인블랙 (최근 n개 삭제) ===
         case "맨인블랙": {
           const count = parseInt(args[0]);
@@ -387,7 +300,6 @@ client.on("messageCreate", async (message)=>{
           const deletedMessages = await message.channel.bulkDelete(count, true).catch(err => null);
           return message.channel.send(`🕶 최근 ${deletedMessages?.size || 0}개의 메시지를 삭제했습니다.`);
         }
-
         // === 아이템 시스템 ===
         case "아이템":{
           if(args.length<1) return message.reply("⚠️ 사용법: !아이템 <제작/등급/강화/판매/구입/시장/목록>");
@@ -524,13 +436,11 @@ client.on("messageCreate", async (message)=>{
               return message.reply("존재하지 않는 기능");
           }
         }
-
         // === 봇 자산 조회 ===
         case "봇자산":{
           const asset = getBotAsset(guildId);
           return message.reply(`💰 길냥이봇 재산: ${asset.toLocaleString()}pt`);
         }
-
         // === 채널 생성 ===
         case "채널생성":{
           if(args.length<2) return message.reply("사용법: !채널생성 <카테고리명> <채널명>");
@@ -543,7 +453,6 @@ client.on("messageCreate", async (message)=>{
           await guild.channels.create({ name: channelName, type: ChannelType.GuildText, parent: category.id }).catch(err=>{});
           return message.reply(`✅ "${channelName}" 채널 생성 완료`);
         }
-
         // === 기본 역할 설정 ===
         case "기본역할":{
           const role = message.mentions.roles.first();
@@ -551,7 +460,6 @@ client.on("messageCreate", async (message)=>{
           saveData(guildId,"defaultRole",{ id: role.id });
           return message.reply(`✅ 기본 역할 ${role.name} 설정 완료`);
         }
-
         // === 공지 기능 ===
         case "공지":{
           if(!args.length) return message.reply("사용법: !공지 <내용>");
@@ -563,177 +471,50 @@ client.on("messageCreate", async (message)=>{
           return message.reply("✅ 공지 전송 완료");
         }
         case "냥이설명서":
-          const pages = [
-              new EmbedBuilder()
-                .setTitle("🐾 길냥이봇 사용 설명서 — 1️⃣ 일반 명령어")
-                .setColor(0xFFD700)
-                .setDescription("냥냥~ 여긴 길냥이봇 명령어 모음집이야!\n\n`!` 접두어로 명령어를 입력해줘 💛")
-                .addFields(
-                  { name: "💬 일반 명령어", value: [
-                    "`!안녕` — 반말/존댓말에 따라 인사",
-                    "`!반모` — 반말 모드 전환",
-                    "`!반종` — 존댓말 모드 복귀",
-                    "`!시간` — 현재 한국 시간 표시",
-                    "`!길냥이봇정보` — 봇 정보 확인"
-                  ].join("\n") }
-                )
-                .setFooter({ text: "페이지 1 / 6" }),
 
-              new EmbedBuilder()
-                .setTitle("📜 출석 / 포인트 시스템 — 2️⃣")
-                .setColor(0xA3E4D7)
-                .addFields(
-                  { name: "🧾 포인트 명령어", value: [
-                    "`!출석` — 하루 1회 출석 포인트 획득 (2000pt)",
-                    "`!포인트` — 현재 포인트 확인",
-                    "`!포인트랭킹` — 상위 10위 표시"
-                  ].join("\n") },
-                  { name: "👨‍💻 개발자 전용", value: "`!devpoint <지급/복원> <유저ID>` — 개발자 전용 포인트 관리" }
-                )
-                .setFooter({ text: "페이지 2 / 6" }),
-
-              new EmbedBuilder()
-                .setTitle("⚒️ 아이템 시스템 — 3️⃣")
-                .setColor(0xF7DC6F)
-                .addFields(
-                  { name: "제작 & 관리", value: [
-                    "`!아이템 제작 <이름>` — 포인트로 아이템 제작",
-                    "`!아이템 강화 <이름>` — 강화 시도 (성공/파괴 확률 있음)",
-                    "`!아이템 등급 <이름>` — 등급과 강화 수치 확인",
-                    "`!아이템 목록` — 보유 중인 아이템 표시"
-                  ].join("\n") },
-                  { name: "시장 관련", value: [
-                    "`!아이템 판매 <이름> <가격>` — 아이템 시장에 등록",
-                    "`!아이템 구입 <이름>` — 시장에서 아이템 구매",
-                    "`!아이템 시장` — 시장 등록 목록 확인"
-                  ].join("\n") }
-                )
-                .setFooter({ text: "페이지 3 / 6" }),
-
-              new EmbedBuilder()
-                .setTitle("💰 경제 시스템 — 4️⃣")
-                .setColor(0x85C1E9)
-                .addFields(
-                  { name: "봇 자산", value: "`!봇자산` — 길냥이봇의 총 보유 포인트 확인" },
-                  { name: "시장 통계", value: "판매 및 거래 내역은 자동으로 로그에 기록됩니다." }
-                )
-                .setFooter({ text: "페이지 4 / 6" }),
-
-              new EmbedBuilder()
-                .setTitle("🧹 관리자 / 운영 명령어 — 5️⃣")
-                .setColor(0xE67E22)
-                .addFields(
-                  { name: "📢 관리 기능", value: [
-                    "`!공지 <내용>` — 공지 채널에 공지 전송",
-                    "`!채널생성 <카테고리> <채널>` — 텍스트 채널 생성",
-                    "`!기본역할 <@역할>` — 자기소개 완료 시 자동 부여 역할 설정"
-                  ].join("\n") },
-                  { name: "💥 메시지 제어", value: [
-                    "`!시공의폭풍` — 채널 내 모든 메시지 삭제 (확인 필요)",
-                    "`!맨인블랙 <숫자>` — 최근 N개 메시지 삭제 (최대 100)"
-                  ].join("\n") }
-                )
-                .setFooter({ text: "페이지 5 / 6" }),
-
-              new EmbedBuilder()
-                .setTitle("⚙️ 자동 시스템 — 6️⃣")
-                .setColor(0xBB8FCE)
-                .addFields(
-                  { name: "🧩 자동 기능", value: [
-                    "🪪 자기소개 감시 — 자기소개 미작성 시 24시간 후 자동 강퇴",
-                    "🪄 상태 회전 — 1분마다 봇 상태 자동 변경",
-                    "💾 자동 저장 — 유저/아이템/로그 데이터 자동 저장",
-                    "🧰 오류 로깅 — 오류 발생 시 개발자 채널로 보고",
-                    "🎯 기본 역할 부여 — 자기소개 완료 시 지정 역할 자동 지급"
-                  ].join("\n") }
-                )
-                .setFooter({ text: "페이지 6 / 6" })
-            ];
-
-            let page = 0;
-
-            const row = new ActionRowBuilder().addComponents(
-              new ButtonBuilder().setCustomId("prev").setLabel("◀️ 이전").setStyle(ButtonStyle.Secondary).setDisabled(true),
-              new ButtonBuilder().setCustomId("next").setLabel("다음 ▶️").setStyle(ButtonStyle.Primary)
-            );
-
-            const msg = await message.reply({ embeds: [pages[page]], components: [row] });
-
-            const collector = msg.createMessageComponentCollector({ time: 60000 });
-
-            collector.on("collect", async i => {
-              if (i.user.id !== message.author.id) return i.reply({ content: "⛔ 본인만 조작할 수 있습니다.", ephemeral: true });
-
-              if (i.customId === "next") page++;
-              else if (i.customId === "prev") page--;
-
-              page = Math.max(0, Math.min(pages.length - 1, page));
-
-              const newRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId("prev").setLabel("◀️ 이전").setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
-                new ButtonBuilder().setCustomId("next").setLabel("다음 ▶️").setStyle(ButtonStyle.Primary).setDisabled(page === pages.length - 1)
-              );
-
-              await i.update({ embeds: [pages[page]], components: [newRow] });
-            });
-
-            collector.on("end", async () => {
-              const disabledRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId("prev").setLabel("◀️ 이전").setStyle(ButtonStyle.Secondary).setDisabled(true),
-                new ButtonBuilder().setCustomId("next").setLabel("다음 ▶️").setStyle(ButtonStyle.Primary).setDisabled(true)
-              );
-              await msg.edit({ components: [disabledRow] });
-            });
-            default:
-          await message.reply("Error Code : 040");
-          await devLogError(guild,author,`명령어 오류: "${cmd}" 입력됨`,"040");
-        }
-        
+          
       }
-  }catch(err){
-    // 전역 에러 처리
-    try{ await devLogError(message.guild, message.author, err, "343"); }catch(e){}
-    await message.reply("Error Code : 343").catch(()=>{});
-  }
-});
+  } catch(e) {
+      console.error(e);
+        await devLogError(message.guild,message.author,e,"343");
+        await message.reply("Error Code : 343").catch(()=>{});
+      
+    }
+  });
 
-// === 새 유저 입장 ===
-client.on("guildMemberAdd", async (member)=>{
-  const guildId = member.guild.id;
+// === 유저 입장 / 자기소개 미작성 강퇴 ===
+client.on("guildMemberAdd",async member=>{
+  const guildId=member.guild.id;
   ensureServerData(guildId);
-  const joinQueue = loadData(guildId,"joinQueue");
-  joinQueue[member.id] = { joinTime: new Date().toISOString(), introDone:false };
+  const joinQueue=loadData(guildId,"joinQueue");
+  joinQueue[member.id]={joinTime:new Date().toISOString(),introDone:false};
   saveData(guildId,"joinQueue",joinQueue);
-
   if(WELCOME_CHANNEL_ID){
-    const welcomeCh = await member.guild.channels.fetch(WELCOME_CHANNEL_ID).catch(()=>null);
-    if(welcomeCh && welcomeCh.isTextBased()) welcomeCh.send(`🎉 ${member.user.tag}님 입장! 자기소개 작성해주세요.`);
+    const ch=await member.guild.channels.fetch(WELCOME_CHANNEL_ID).catch(()=>null);
+    if(ch&&ch.isTextBased())ch.send(`🎉 ${member.user.tag}님 입장! 자기소개 작성해주세요.`);
   }
 });
 
-// === 24시간 자기소개 미작성 강퇴 ===
-setInterval(async ()=>{
+setInterval(async()=>{
   for(const guild of client.guilds.cache.values()){
-    const guildId = guild.id;
+    const guildId=guild.id;
     ensureServerData(guildId);
-    const joinQueue = loadData(guildId,"joinQueue");
+    const joinQueue=loadData(guildId,"joinQueue");
     let updated=false;
     const now=new Date();
-
-    for(const [userId, info] of Object.entries(joinQueue)){
+    for(const [uid,info] of Object.entries(joinQueue)){
       if(!info.introDone){
-        const joinTime = new Date(info.joinTime);
+        const joinTime=new Date(info.joinTime);
         if(now-joinTime>24*60*60*1000){
-          const member = await guild.members.fetch(userId).catch(()=>null);
-          if(member) await member.kick("자기소개 미작성").catch(()=>{});
-          delete joinQueue[userId];
-          updated=true;
+          const m=await guild.members.fetch(uid).catch(()=>null);
+          if(m)await m.kick("자기소개 미작성").catch(()=>{});
+          delete joinQueue[uid];updated=true;
         }
       }
     }
-    if(updated) saveData(guildId,"joinQueue",joinQueue);
+    if(updated)saveData(guildId,"joinQueue",joinQueue);
   }
-}, 10*60*1000);
+},10*60*1000);
 
 // === 로그인 ===
-client.login(process.env.BOT_TOKEN);
+client.login(TOKEN);
