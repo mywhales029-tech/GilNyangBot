@@ -189,11 +189,9 @@ client.on("messageCreate",async message=>{
         if(banmalMode)lastBanmal=reply;else lastJondaet=reply;
         return message.reply(reply);
       }
-
       case "반모": banmalMode=true; return message.reply("이제부터 반말로 대답할게.");
       case "반종": banmalMode=false; return message.reply("존댓말 모드로 돌아왔습니다.");
       case "시간": return message.reply(`현재 시간: ${new Date().toLocaleString("ko-KR")}`);
-
       case "길냥이봇정보": {
         const embedInfo=new EmbedBuilder()
           .setTitle("🤖 봇 정보")
@@ -209,9 +207,8 @@ client.on("messageCreate",async message=>{
           .setTimestamp();
         return message.reply({embeds:[embedInfo]});
       }
-      // === 개발자 포인트 ===
-        case "devpoint":{
-          if(!DEV_IDS.includes(author.id)) return message.reply("⛔ 권한이 없습니다.");
+      case "devpoint":{
+        if(!DEV_IDS.includes(author.id)) return message.reply("⛔ 권한이 없습니다.");
           const action = args[0]; // 지급/복원
           const targetId = args[1];
           if(!targetId) return message.reply("사용법: !devpoint <지급/복원> <유저ID>");
@@ -221,8 +218,8 @@ client.on("messageCreate",async message=>{
           else return message.reply("❌ 사용법: !devpoint <지급/복원> <유저ID>");
           saveData(guildId,"points",pointsData);
           return message.reply(`✅ <@${targetId}>님 포인트 ${action} 완료`);
-        }
-        // === 출석 ===
+      }
+      // === 출석 ===
         case "출석":{
           const userId=author.id;
           const now=new Date();
@@ -471,8 +468,6 @@ client.on("messageCreate",async message=>{
           return message.reply("✅ 공지 전송 완료");
         }
         case "냥이설명서":
-
-          
       }
   } catch(e) {
       console.error(e);
