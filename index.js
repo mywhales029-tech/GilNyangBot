@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { readFileSync } from "fs"; // ES 모듈 기준
 import DiscordJS, {
   Client,
   GatewayIntentBits,
@@ -15,6 +16,10 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// package.json 읽어서 버전 가져오기
+const packageJson = JSON.parse(readFileSync("./package.json", "utf8"));
+const botVersion = packageJson.version;
 
 // === 환경 변수 ===
 const TOKEN = process.env.BOT_TOKEN;
@@ -395,13 +400,14 @@ client.on("messageCreate", async (message)=>{
           .setTitle("🤖 봇 정보")
           .setColor(0x00aaff)
           .addFields(
-            {name:"이름",value:client.user.username,inline:true},
-            {name:"개발일",value:"2018.11.17",inline:true},
-            {name:"소속 서버 수",value:`${client.guilds.cache.size}`,inline:true},
-            {name:"엔진",value:"NobleNetick",inline:true},
-            {name:"언어",value:"JavaScript (Node.js)",inline:true}
+            { name: "이름", value: client.user.username, inline: true },
+            { name: "개발일", value: "2018.11.17", inline: true },
+            { name: "소속 서버 수", value: `${client.guilds.cache.size}`, inline: true },
+            { name: "엔진", value: "NobleNetick", inline: true },
+            { name: "언어", value: "JavaScript (Node.js)", inline: true },
+            { name: "버전", value: botVersion, inline: true } // 여기에 버전 표시
           ).setTimestamp();
-        return message.reply({embeds:[embedInfo]});
+        return message.reply({ embeds: [embedInfo] });
       }
 
       // === 개발자 포인트 ===
