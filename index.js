@@ -273,7 +273,7 @@ client.on("messageCreate", async (message)=>{
                     "`!반모` — 반말 모드 전환",
                     "`!반종` — 존댓말 모드 복귀",
                     "`!시간` — 현재 한국 시간 표시",
-                    "`!봇정보` — 봇 정보 확인"
+                    "`!길냥봇정보` — 봇 정보 확인"
                   ].join("\n") }
                 )
                 .setFooter({ text: "페이지 1 / 6" }),
@@ -398,7 +398,7 @@ client.on("messageCreate", async (message)=>{
       case "반종": banmalMode=false; return message.reply("존댓말 모드로 돌아왔습니다.");
       case "시간": return message.reply(`현재 시간: ${new Date().toLocaleString("ko-KR")}`);
       // EmbedBuilder 코드에 추가
-      case "봇정보": {
+      case "길냥봇정보": {
         const embedInfo = new EmbedBuilder()
           .setTitle("🤖 봇 정보")
           .setColor(0x00aaff)
