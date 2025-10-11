@@ -165,7 +165,7 @@ const statuses = [
   { name: "강화 중...", type: 0 },
   { name: "아이템 제작 중...", type: 0 },
   { name: "포인트 계산 중...", type: 3 },
-  { name: "냥이들의 모험을 관찰 중", type: 3 }
+  { name: "태평하게 영화", type: 3 }
 ];
 
 // === 봇 준비 ===
