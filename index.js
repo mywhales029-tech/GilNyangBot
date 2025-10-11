@@ -1,5 +1,7 @@
 import 'dotenv/config';
 import { readFileSync } from "fs"; // ES 모듈 기준
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
 import DiscordJS, {
   Client,
   GatewayIntentBits,
@@ -12,13 +14,13 @@ import DiscordJS, {
 } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
+// 현재 파일 기준으로 package.json 경로 지정
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = dirname(__filename);
+const packageJsonPath = join(__dirname, "package.json");
 
-// package.json 읽어서 버전 가져오기
-const packageJson = JSON.parse(readFileSync("./package.json", "utf8"));
+const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 const botVersion = packageJson.version;
 
 // === 환경 변수 ===
@@ -395,8 +397,9 @@ client.on("messageCreate", async (message)=>{
       case "반모": banmalMode=true; return message.reply("이제부터 반말로 대답할게.");
       case "반종": banmalMode=false; return message.reply("존댓말 모드로 돌아왔습니다.");
       case "시간": return message.reply(`현재 시간: ${new Date().toLocaleString("ko-KR")}`);
+      // EmbedBuilder 코드에 추가
       case "봇정보": {
-        const embedInfo=new EmbedBuilder()
+        const embedInfo = new EmbedBuilder()
           .setTitle("🤖 봇 정보")
           .setColor(0x00aaff)
           .addFields(
@@ -405,8 +408,10 @@ client.on("messageCreate", async (message)=>{
             { name: "소속 서버 수", value: `${client.guilds.cache.size}`, inline: true },
             { name: "엔진", value: "NobleNetick", inline: true },
             { name: "언어", value: "JavaScript (Node.js)", inline: true },
-            { name: "버전", value: botVersion, inline: true } // 여기에 버전 표시
-          ).setTimestamp();
+            { name: "버전", value: botVersion, inline: true } // 여기서 버전 표시
+          )
+          .setTimestamp();
+
         return message.reply({ embeds: [embedInfo] });
       }
 
