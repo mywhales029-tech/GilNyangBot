@@ -1,6 +1,7 @@
 {
   "name": "gilnyangbot",
   "version": "1.0.0",
+  "description": "",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -16,7 +17,6 @@
     "url": "https://github.com/mywhales029-tech/GilNyangBot/issues"
   },
   "homepage": "https://github.com/mywhales029-tech/GilNyangBot#readme",
-  "description": "",
   "dependencies": {
     "discord.js": "^14.23.2",
     "dotenv": "^17.2.3"
