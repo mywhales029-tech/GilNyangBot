@@ -467,7 +467,71 @@ client.on("messageCreate",async message=>{
           ch.send({ content: `📢 공지: ${contentNotice}` }).catch(()=>{});
           return message.reply("✅ 공지 전송 완료");
         }
-        case "냥이설명서":
+        case "냥이설명서":{
+          const embed = new EmbedBuilder()
+          .setTitle("📘 길냥이봇 설명서")
+          .setColor(0x00cc99)
+          .setDescription("길냥이봇의 주요 기능과 명령어들을 안내드립니다!")
+          .addFields(
+            {
+              name: "💬 기본 명령어",
+              value: [
+                "`!안녕` — 인사하기",
+                "`!시간` — 현재 시간 확인",
+                "`!반모` / `!반종` — 반말 / 존댓말 모드 전환",
+                "`!길냥이봇정보` — 봇의 정보 및 버전 확인",
+                "`!냥이설명서` — 이 도움말 보기"
+              ].join("\n"),
+              inline: false
+            },
+            {
+              name: "🎁 출석 및 포인트",
+              value: [
+                "`!출석` — 하루 1회 출석 시 2000pt 획득",
+                "`!포인트` — 내 포인트 확인",
+                "`!포인트랭킹` — 상위 10명 랭킹 확인"
+              ].join("\n"),
+              inline: false
+            },
+            {
+              name: "⚙️ 아이템 시스템",
+              value: [
+                "`!아이템 제작 <이름>` — 새 아이템 제작 (250pt 소모)",
+                "`!아이템 강화 <이름>` — 아이템 강화 (확률형)",
+                "`!아이템 등급 <이름>` — 아이템 등급 조회",
+                "`!아이템 판매 <이름> <가격>` — 시장에 등록",
+                "`!아이템 구입 <이름>` — 시장 아이템 구매",
+                "`!아이템 시장` — 현재 시장 목록 보기",
+                "`!아이템 목록` — 내 아이템 목록 보기"
+              ].join("\n"),
+              inline: false
+            },
+            {
+              name: "🏦 시스템 및 관리",
+              value: [
+                "`!봇자산` — 길냥이봇의 전체 재산 확인",
+                "`!채널생성 <카테고리명> <채널명>` — 새 채널 생성",
+                "`!기본역할 <@역할>` — 자기소개 완료 시 자동 부여 역할 설정",
+                "`!공지 <내용>` — 공지 채널로 메시지 전송 (관리자용)",
+                "`!맨인블랙 <숫자>` — 최근 메시지 삭제 (1~100개)",
+                "`!시공의폭풍` — 채널 전체 메시지 삭제 (확인 버튼 포함)"
+              ].join("\n"),
+              inline: false
+            },
+            {
+              name: "🔧 개발자 전용",
+              value: [
+                "`!devpoint 지급 <유저ID>` — 포인트 지급",
+                "`!devpoint 복원 <유저ID>` — 포인트 복원"
+              ].join("\n"),
+              inline: false
+            }
+          )
+          .setFooter({ text: "🐾 길냥이봇 — by NobleNetick", iconURL: client.user.displayAvatarURL() })
+          .setTimestamp();
+
+        return message.reply({ embeds: [embed] });
+        }
       }
   } catch(e) {
       console.error(e);
