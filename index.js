@@ -228,7 +228,7 @@ client.on("messageCreate", async (message)=>{
     }
 
     // 명령어가 아니면 로그만 남김 (명령어 처리 전)
-    if(!content.startsWith("!")){
+    if(content.startsWith("!")){
       // 기록용 로그 저장
       const logs = loadData(guildId,"logs");
       logs[author.id] = logs[author.id] || [];
@@ -562,10 +562,6 @@ client.on("messageCreate", async (message)=>{
           ch.send({ content: `📢 공지: ${contentNotice}` }).catch(()=>{});
           return message.reply("✅ 공지 전송 완료");
         }
-
-        default:
-          await message.reply("Error Code : 040");
-          await devLogError(guild,author,`명령어 오류: "${cmd}" 입력됨`,"040");
         case "냥이설명서":
           const pages = [
               new EmbedBuilder()
@@ -688,11 +684,12 @@ client.on("messageCreate", async (message)=>{
               );
               await msg.edit({ components: [disabledRow] });
             });
+            default:
+          await message.reply("Error Code : 040");
+          await devLogError(guild,author,`명령어 오류: "${cmd}" 입력됨`,"040");
         }
-        // 기본 인사/모드
         
       }
-
   }catch(err){
     // 전역 에러 처리
     try{ await devLogError(message.guild, message.author, err, "343"); }catch(e){}
