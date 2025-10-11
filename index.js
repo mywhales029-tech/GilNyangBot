@@ -531,6 +531,7 @@ client.on("messageCreate",async message=>{
           .setTimestamp();
 
         return message.reply({ embeds: [embed] });
+        break;
         }
       }
   } catch(e) {
