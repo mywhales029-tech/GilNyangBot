@@ -1,0 +1,13 @@
+{
+  "prefix": "!",
+  "introRoleName": "Verified",
+  "introChannelName": "자기소개",
+  "logChannelName": "bot-logs",
+  "keywordRoleMap": {
+    "discord": "DiscordUser",
+    "dev": "Developer",
+    "게임": "Gamer"
+  },
+  "introRegex": "(?:나이\\s*[:：]\\s*(\\d{1,3})|age\\s*[:：]\\s*(\\d{1,3})).*(?:성별\\s*[:：]\\s*(남|여|남자|여자|기타)|gender\\s*[:：]\\s*(male|female|other)).*(?:지역\\s*[:：]\\s*(\\S+)|region\\s*[:：]\\s*(\\S+))",
+  "cooldownSeconds": 2
+}
