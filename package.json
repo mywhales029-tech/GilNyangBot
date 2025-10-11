@@ -2,6 +2,7 @@
   "name": "gilnyangbot",
   "version": "1.0.0",
   "main": "index.js",
+  "type": "module",	
   "dependencies": {
     "discord-api-types": "^0.38.29",
     "discord.js": "^14.23.2",
