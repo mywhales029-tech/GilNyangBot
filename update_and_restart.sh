@@ -9,8 +9,8 @@ git reset --hard origin/main
 CURRENT_VERSION=$(grep '"version"' package.json | head -1 | sed 's/[^0-9.]//g')
 IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
 
-# 3. 버전 증가 (minor 기준, patch 올리려면 PATCH=$((PATCH+1))로 변경)
-MINOR=$((MINOR + 1))
+# 3. patch 버전 증가
+PATCH=$((PATCH + 1))
 NEW_VERSION="$MAJOR.$MINOR.$PATCH"
 
 # 4. package.json에 새로운 버전 적용
@@ -18,12 +18,17 @@ echo "Updating package.json version..."
 sed -i "s/\"version\": \"$CURRENT_VERSION\"/\"version\": \"$NEW_VERSION\"/" package.json
 echo "Version updated: $CURRENT_VERSION → $NEW_VERSION"
 
-# 5. npm 패키지 설치/업데이트
+# 5. Git에 커밋 및 푸시
+git add package.json
+git commit -m "Bump version $CURRENT_VERSION → $NEW_VERSION"
+git push origin main
+
+# 6. npm 패키지 설치/업데이트
 echo "Installing/updating npm packages..."
 npm install
 
-# 6. PM2로 봇 재시작
+# 7. PM2로 봇 재시작
 echo "Restarting GilNyangBot..."
 pm2 restart GilNyangBot --update-env
 
-echo "Update and restart complete! Current version: $NEW_VERSION"
+echo "Update, push, and restart complete! Current version: $NEW_VERSION"
