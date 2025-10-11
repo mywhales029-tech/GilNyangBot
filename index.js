@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import {
+import DiscordJS, {
   Client,
   GatewayIntentBits,
   Partials,
@@ -114,15 +114,8 @@ function getRandomGrade() {
   return ITEM_GRADES[Math.floor(Math.random() * ITEM_GRADES.length)];
 }
 
-// === 클라이언트 ===
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildMembers
-  ],
-  partials: [Partials.Channel]
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
 // === 반말 모드 ===
@@ -733,4 +726,4 @@ setInterval(async ()=>{
 }, 10*60*1000);
 
 // === 로그인 ===
-client.login(TOKEN);
+client.login(process.env.BOT_TOKEN);
