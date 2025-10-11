@@ -176,7 +176,7 @@ const statuses = [
 ];
 
 // === 봇 준비 ===
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`${client.user.tag} 로그인 완료!`);
   let i = 0;
   setInterval(() => {
