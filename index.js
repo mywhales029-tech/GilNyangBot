@@ -74,130 +74,6 @@ function setBotAsset(guildId, amount) {
   saveData(guildId, "points", pointsData);
 }
 
-// === 냥이설명서 ===
-if (cmd === "냥이설명서") {
-  const pages = [
-    new EmbedBuilder()
-      .setTitle("🐾 길냥이봇 사용 설명서 — 1️⃣ 일반 명령어")
-      .setColor(0xFFD700)
-      .setDescription("냥냥~ 여긴 길냥이봇 명령어 모음집이야!\n\n`!` 접두어로 명령어를 입력해줘 💛")
-      .addFields(
-        { name: "💬 일반 명령어", value: [
-          "`!안녕` — 반말/존댓말에 따라 인사",
-          "`!반모` — 반말 모드 전환",
-          "`!반종` — 존댓말 모드 복귀",
-          "`!시간` — 현재 한국 시간 표시",
-          "`!봇정보` — 봇 정보 확인"
-        ].join("\n") }
-      )
-      .setFooter({ text: "페이지 1 / 6" }),
-
-    new EmbedBuilder()
-      .setTitle("📜 출석 / 포인트 시스템 — 2️⃣")
-      .setColor(0xA3E4D7)
-      .addFields(
-        { name: "🧾 포인트 명령어", value: [
-          "`!출석` — 하루 1회 출석 포인트 획득 (2000pt)",
-          "`!포인트` — 현재 포인트 확인",
-          "`!포인트랭킹` — 상위 10위 표시"
-        ].join("\n") },
-        { name: "👨‍💻 개발자 전용", value: "`!devpoint <지급/복원> <유저ID>` — 개발자 전용 포인트 관리" }
-      )
-      .setFooter({ text: "페이지 2 / 6" }),
-
-    new EmbedBuilder()
-      .setTitle("⚒️ 아이템 시스템 — 3️⃣")
-      .setColor(0xF7DC6F)
-      .addFields(
-        { name: "제작 & 관리", value: [
-          "`!아이템 제작 <이름>` — 포인트로 아이템 제작",
-          "`!아이템 강화 <이름>` — 강화 시도 (성공/파괴 확률 있음)",
-          "`!아이템 등급 <이름>` — 등급과 강화 수치 확인",
-          "`!아이템 목록` — 보유 중인 아이템 표시"
-        ].join("\n") },
-        { name: "시장 관련", value: [
-          "`!아이템 판매 <이름> <가격>` — 아이템 시장에 등록",
-          "`!아이템 구입 <이름>` — 시장에서 아이템 구매",
-          "`!아이템 시장` — 시장 등록 목록 확인"
-        ].join("\n") }
-      )
-      .setFooter({ text: "페이지 3 / 6" }),
-
-    new EmbedBuilder()
-      .setTitle("💰 경제 시스템 — 4️⃣")
-      .setColor(0x85C1E9)
-      .addFields(
-        { name: "봇 자산", value: "`!봇자산` — 길냥이봇의 총 보유 포인트 확인" },
-        { name: "시장 통계", value: "판매 및 거래 내역은 자동으로 로그에 기록됩니다." }
-      )
-      .setFooter({ text: "페이지 4 / 6" }),
-
-    new EmbedBuilder()
-      .setTitle("🧹 관리자 / 운영 명령어 — 5️⃣")
-      .setColor(0xE67E22)
-      .addFields(
-        { name: "📢 관리 기능", value: [
-          "`!공지 <내용>` — 공지 채널에 공지 전송",
-          "`!채널생성 <카테고리> <채널>` — 텍스트 채널 생성",
-          "`!기본역할 <@역할>` — 자기소개 완료 시 자동 부여 역할 설정"
-        ].join("\n") },
-        { name: "💥 메시지 제어", value: [
-          "`!시공의폭풍` — 채널 내 모든 메시지 삭제 (확인 필요)",
-          "`!맨인블랙 <숫자>` — 최근 N개 메시지 삭제 (최대 100)"
-        ].join("\n") }
-      )
-      .setFooter({ text: "페이지 5 / 6" }),
-
-    new EmbedBuilder()
-      .setTitle("⚙️ 자동 시스템 — 6️⃣")
-      .setColor(0xBB8FCE)
-      .addFields(
-        { name: "🧩 자동 기능", value: [
-          "🪪 자기소개 감시 — 자기소개 미작성 시 24시간 후 자동 강퇴",
-          "🪄 상태 회전 — 1분마다 봇 상태 자동 변경",
-          "💾 자동 저장 — 유저/아이템/로그 데이터 자동 저장",
-          "🧰 오류 로깅 — 오류 발생 시 개발자 채널로 보고",
-          "🎯 기본 역할 부여 — 자기소개 완료 시 지정 역할 자동 지급"
-        ].join("\n") }
-      )
-      .setFooter({ text: "페이지 6 / 6" })
-  ];
-
-  let page = 0;
-
-  const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId("prev").setLabel("◀️ 이전").setStyle(ButtonStyle.Secondary).setDisabled(true),
-    new ButtonBuilder().setCustomId("next").setLabel("다음 ▶️").setStyle(ButtonStyle.Primary)
-  );
-
-  const msg = await message.reply({ embeds: [pages[page]], components: [row] });
-
-  const collector = msg.createMessageComponentCollector({ time: 60000 });
-
-  collector.on("collect", async i => {
-    if (i.user.id !== message.author.id) return i.reply({ content: "⛔ 본인만 조작할 수 있습니다.", ephemeral: true });
-
-    if (i.customId === "next") page++;
-    else if (i.customId === "prev") page--;
-
-    page = Math.max(0, Math.min(pages.length - 1, page));
-
-    const newRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("prev").setLabel("◀️ 이전").setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
-      new ButtonBuilder().setCustomId("next").setLabel("다음 ▶️").setStyle(ButtonStyle.Primary).setDisabled(page === pages.length - 1)
-    );
-
-    await i.update({ embeds: [pages[page]], components: [newRow] });
-  });
-
-  collector.on("end", async () => {
-    const disabledRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("prev").setLabel("◀️ 이전").setStyle(ButtonStyle.Secondary).setDisabled(true),
-      new ButtonBuilder().setCustomId("next").setLabel("다음 ▶️").setStyle(ButtonStyle.Primary).setDisabled(true)
-    );
-    await msg.edit({ components: [disabledRow] });
-  });
-}
 
 // === 아이템 등급 및 확률 ===
 const ITEM_GRADES = [
@@ -383,7 +259,132 @@ client.on("messageCreate", async (message)=>{
     // -----------------------
     // 명령어 처리
     // -----------------------
+    // === 냥이설명서 ===
+    if (cmd === "냥이설명서") {
+      const pages = [
+        new EmbedBuilder()
+          .setTitle("🐾 길냥이봇 사용 설명서 — 1️⃣ 일반 명령어")
+          .setColor(0xFFD700)
+          .setDescription("냥냥~ 여긴 길냥이봇 명령어 모음집이야!\n\n`!` 접두어로 명령어를 입력해줘 💛")
+          .addFields(
+            { name: "💬 일반 명령어", value: [
+              "`!안녕` — 반말/존댓말에 따라 인사",
+              "`!반모` — 반말 모드 전환",
+              "`!반종` — 존댓말 모드 복귀",
+              "`!시간` — 현재 한국 시간 표시",
+              "`!봇정보` — 봇 정보 확인"
+            ].join("\n") }
+          )
+          .setFooter({ text: "페이지 1 / 6" }),
+
+        new EmbedBuilder()
+          .setTitle("📜 출석 / 포인트 시스템 — 2️⃣")
+          .setColor(0xA3E4D7)
+          .addFields(
+            { name: "🧾 포인트 명령어", value: [
+              "`!출석` — 하루 1회 출석 포인트 획득 (2000pt)",
+              "`!포인트` — 현재 포인트 확인",
+              "`!포인트랭킹` — 상위 10위 표시"
+            ].join("\n") },
+            { name: "👨‍💻 개발자 전용", value: "`!devpoint <지급/복원> <유저ID>` — 개발자 전용 포인트 관리" }
+          )
+          .setFooter({ text: "페이지 2 / 6" }),
+
+        new EmbedBuilder()
+          .setTitle("⚒️ 아이템 시스템 — 3️⃣")
+          .setColor(0xF7DC6F)
+          .addFields(
+            { name: "제작 & 관리", value: [
+              "`!아이템 제작 <이름>` — 포인트로 아이템 제작",
+              "`!아이템 강화 <이름>` — 강화 시도 (성공/파괴 확률 있음)",
+              "`!아이템 등급 <이름>` — 등급과 강화 수치 확인",
+              "`!아이템 목록` — 보유 중인 아이템 표시"
+            ].join("\n") },
+            { name: "시장 관련", value: [
+              "`!아이템 판매 <이름> <가격>` — 아이템 시장에 등록",
+              "`!아이템 구입 <이름>` — 시장에서 아이템 구매",
+              "`!아이템 시장` — 시장 등록 목록 확인"
+            ].join("\n") }
+          )
+          .setFooter({ text: "페이지 3 / 6" }),
+
+        new EmbedBuilder()
+          .setTitle("💰 경제 시스템 — 4️⃣")
+          .setColor(0x85C1E9)
+          .addFields(
+            { name: "봇 자산", value: "`!봇자산` — 길냥이봇의 총 보유 포인트 확인" },
+            { name: "시장 통계", value: "판매 및 거래 내역은 자동으로 로그에 기록됩니다." }
+          )
+          .setFooter({ text: "페이지 4 / 6" }),
+
+        new EmbedBuilder()
+          .setTitle("🧹 관리자 / 운영 명령어 — 5️⃣")
+          .setColor(0xE67E22)
+          .addFields(
+            { name: "📢 관리 기능", value: [
+              "`!공지 <내용>` — 공지 채널에 공지 전송",
+              "`!채널생성 <카테고리> <채널>` — 텍스트 채널 생성",
+              "`!기본역할 <@역할>` — 자기소개 완료 시 자동 부여 역할 설정"
+            ].join("\n") },
+            { name: "💥 메시지 제어", value: [
+              "`!시공의폭풍` — 채널 내 모든 메시지 삭제 (확인 필요)",
+              "`!맨인블랙 <숫자>` — 최근 N개 메시지 삭제 (최대 100)"
+            ].join("\n") }
+          )
+          .setFooter({ text: "페이지 5 / 6" }),
+
+        new EmbedBuilder()
+          .setTitle("⚙️ 자동 시스템 — 6️⃣")
+          .setColor(0xBB8FCE)
+          .addFields(
+            { name: "🧩 자동 기능", value: [
+              "🪪 자기소개 감시 — 자기소개 미작성 시 24시간 후 자동 강퇴",
+              "🪄 상태 회전 — 1분마다 봇 상태 자동 변경",
+              "💾 자동 저장 — 유저/아이템/로그 데이터 자동 저장",
+              "🧰 오류 로깅 — 오류 발생 시 개발자 채널로 보고",
+              "🎯 기본 역할 부여 — 자기소개 완료 시 지정 역할 자동 지급"
+            ].join("\n") }
+          )
+          .setFooter({ text: "페이지 6 / 6" })
+      ];
+
+      let page = 0;
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("prev").setLabel("◀️ 이전").setStyle(ButtonStyle.Secondary).setDisabled(true),
+        new ButtonBuilder().setCustomId("next").setLabel("다음 ▶️").setStyle(ButtonStyle.Primary)
+      );
+
+      const msg = await message.reply({ embeds: [pages[page]], components: [row] });
+
+      const collector = msg.createMessageComponentCollector({ time: 60000 });
+
+      collector.on("collect", async i => {
+        if (i.user.id !== message.author.id) return i.reply({ content: "⛔ 본인만 조작할 수 있습니다.", ephemeral: true });
+
+        if (i.customId === "next") page++;
+        else if (i.customId === "prev") page--;
+
+        page = Math.max(0, Math.min(pages.length - 1, page));
+
+        const newRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId("prev").setLabel("◀️ 이전").setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+          new ButtonBuilder().setCustomId("next").setLabel("다음 ▶️").setStyle(ButtonStyle.Primary).setDisabled(page === pages.length - 1)
+        );
+
+        await i.update({ embeds: [pages[page]], components: [newRow] });
+      });
+
+      collector.on("end", async () => {
+        const disabledRow = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId("prev").setLabel("◀️ 이전").setStyle(ButtonStyle.Secondary).setDisabled(true),
+          new ButtonBuilder().setCustomId("next").setLabel("다음 ▶️").setStyle(ButtonStyle.Primary).setDisabled(true)
+        );
+        await msg.edit({ components: [disabledRow] });
+      });
+    }
     switch(cmd){
+
       // 기본 인사/모드
       case "안녕": {
         const reply=banmalMode?getRandomReply(banmalReplies,lastBanmal):getRandomReply(jondaetReplies,lastJondaet);
