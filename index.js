@@ -404,9 +404,9 @@ client.on("messageCreate", async (message)=>{
           .setColor(0x00aaff)
           .addFields(
             { name: "이름", value: client.user.username, inline: true },
-            { name: "개발일", value: "2018.11.17", inline: true },
+            { name: "개발일", value: "2025.10.12", inline: true },
             { name: "소속 서버 수", value: `${client.guilds.cache.size}`, inline: true },
-            { name: "엔진", value: "NobleNetick", inline: true },
+            { name: "엔진", value: "NobleNetick2", inline: true },
             { name: "언어", value: "JavaScript (Node.js)", inline: true },
             { name: "버전", value: botVersion, inline: true } // 여기서 버전 표시
           )
