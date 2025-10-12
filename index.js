@@ -173,7 +173,7 @@ client.on("messageCreate",async message=>{
     }
 
     // 명령어 처리
-    if(!content.startsWith("!"))return;
+    if(!content.startsWith("&"))return;
     const args=content.slice(1).trim().split(/ +/);
     const cmd=args.shift().toLowerCase();
 
