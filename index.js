@@ -148,6 +148,28 @@ client.once("ready",()=>{
 
 // === 메시지 처리 ===
 client.on("messageCreate",async message=>{
+  // 자기소개 채널 감지 및 역할 지급
+  if (!message.author.bot) {
+    const config = loadData(message.guild.id, "config");
+    const introChannelId = config.channels?.["자기소개"];
+    const defaultRoleId = config.defaultRole;
+
+    if (introChannelId && message.channel.id === introChannelId) {
+      const member = message.member;
+      if (defaultRoleId) {
+        try {
+          await member.roles.add(defaultRoleId);
+          message.reply(`✅ ${member.user.username} 님, 자기소개 완료! 역할이 지급되었습니다.`);
+        } catch (err) {
+          console.error(err);
+          message.reply("⚠️ 역할 지급 중 오류가 발생했습니다. 관리자에게 문의해주세요.");
+        }
+      } else {
+        message.reply("⚠️ 기본 역할이 설정되어 있지 않습니다. `&기본역할 @역할` 명령어로 먼저 설정해주세요.");
+      }
+    }
+  }
+
   try{
     if(message.author.bot||!message.guild)return;
     const {guild,author,content}=message;
@@ -183,6 +205,27 @@ client.on("messageCreate",async message=>{
     const marketData=loadData(guildId,"market");
 
     switch(cmd){
+
+      case "채널지정": {
+        if (!message.member.permissions.has("Administrator"))
+          return message.reply("⚠️ 관리자만 사용할 수 있습니다.");
+
+        const [category, channelMention] = args;
+        const validCategories = ["자기소개", "입장", "명령어"];
+        if (!category || !validCategories.includes(category))
+          return message.reply(`⚠️ 올바른 분류를 입력하세요.\n가능한 분류: ${validCategories.join(", ")}`);
+        
+        const channel = message.mentions.channels.first();
+        if (!channel) return message.reply("⚠️ 채널을 멘션해주세요. (예: &채널지정 자기소개 #자기소개)");
+
+        const config = loadData(guild.id, "config");
+        if (!config.channels) config.channels = {};
+        config.channels[category] = channel.id;
+        saveData(guild.id, "config", config);
+
+        message.reply(`✅ **${category} 채널**이 ${channel} 로 지정되었습니다.`);
+        break;
+      }
 
       case "안녕": {
         const reply=banmalMode?getRandomReply(banmalReplies,lastBanmal):getRandomReply(jondaetReplies,lastJondaet);
