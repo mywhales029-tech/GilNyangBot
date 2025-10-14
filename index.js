@@ -1,17 +1,7 @@
-require("dotenv").config();
-const {
-  Client,
-  GatewayIntentBits,
-  Collection,
-  Partials,
-  EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  ChannelType
-} = require("discord.js");
-const fs = require("fs");
-const path = require("path");
+import dotenv from "dotenv";
+import { Client, GatewayIntentBits, Collection, Partials, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType } from "discord.js";
+import fs from "fs";
+import path from "path";
 
 // 환경변수
 const TOKEN = process.env.BOT_TOKEN;
