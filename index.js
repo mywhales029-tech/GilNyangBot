@@ -122,6 +122,7 @@ client.on("messageCreate", async message => {
   try {
     if (message.author.bot || !message.guild) return;
     const { guild, author, content } = message;
+    const channel = message.channel;
     const guildId = guild.id;
     ensureServerData(guildId);
 
@@ -131,9 +132,8 @@ client.on("messageCreate", async message => {
       const targetChannelId = config.channels?.[category];
       if (!targetChannelId) continue;
 
-      // 명령어 채널이면서 명령어가 아닌 메시지이면 삭제
       if (channel.id === targetChannelId && !content.startsWith("&")) {
-        await message.delete().catch(() => {}); // 삭제
+        await message.delete().catch(() => {}); // 메시지 삭제
         return; // 이후 로직 종료
       }
     }
