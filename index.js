@@ -18,6 +18,7 @@ import { dirname } from "path";
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const currentChannel = message.channel;
 
 // 환경변수
 const TOKEN = process.env.BOT_TOKEN;
@@ -100,7 +101,7 @@ async function devLogError(guild, user, error, code) {
 }
 
 // === 봇 시작 ===
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`✅ ${client.user.tag} 로그인 완료`);
   const statuses = [
     () => `🐾 길냥이봇 | &도움말`,
@@ -127,21 +128,25 @@ client.on("messageCreate", async message => {
     ensureServerData(guildId);
 
     const config = loadData(guildId, "config");
-    // === 지정 채널에서 일반 메시지 삭제 ===
-    for (const category of ["자기소개", "입장", "명령어"]) {
+    // 지정 채널에서 메시지 제한
+    for (const category of ["명령어", "자기소개"]) {
       const targetChannelId = config.channels?.[category];
       if (!targetChannelId) continue;
 
-      if (channel.id === targetChannelId && !content.startsWith("&")) {
-        await message.delete().catch(() => {}); // 메시지 삭제
-        return; // 이후 로직 종료
+      if (currentChannel.id === targetChannelId) {
+        if (category === "명령어" && !content.startsWith("&")) {
+          // 명령어 채널: 일반 메시지 삭제
+          await message.delete().catch(() => {});
+          return;
+        }
+        if (category === "자기소개" && content.startsWith("&")) {
+          // 자기소개 채널: 명령어 삭제
+          await message.delete().catch(() => {});
+          return;
+        }
       }
-      if (category === "자기소개" && content.startsWith("&")) {
-      // 자기소개 채널: 명령어 메시지 삭제
-      await message.delete().catch(() => {});
-      return;
     }
-    }
+
     const introChannelId = config.channels?.["자기소개"];
     const targetIntroChannelId = introChannelId || INTRO_CHANNEL_ID;
 
