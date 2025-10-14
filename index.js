@@ -71,6 +71,22 @@ function validateIntro(content) {
   return content.length >= 10 && /[가-힣]/.test(content);
 }
 
+function getRandomReply(list, last) {
+  // 기본 문구 세트 (비어 있을 경우 대비)
+  const defaults = [
+    "안녕! 🐾",
+    "반가워~",
+    "오늘 기분 어때?",
+    "냥! 왔냥?",
+    "헤헷 안녕!"
+  ];
+  const replies = list.length ? list : defaults;
+  let reply;
+  do {
+    reply = replies[Math.floor(Math.random() * replies.length)];
+  } while (replies.length > 1 && reply === last);
+  return reply;
+
 // 오류 로그 전송 함수
 async function devLogError(guild, user, error, code) {
   try {
@@ -605,4 +621,4 @@ function getBotAsset(guildId) {
 
 
 // === 로그인 ===
-client.login(TOKEN);
+client.login(TOKEN)};
