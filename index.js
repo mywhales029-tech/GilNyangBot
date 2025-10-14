@@ -136,6 +136,11 @@ client.on("messageCreate", async message => {
         await message.delete().catch(() => {}); // 메시지 삭제
         return; // 이후 로직 종료
       }
+      if (category === "자기소개" && content.startsWith("&")) {
+      // 자기소개 채널: 명령어 메시지 삭제
+      await message.delete().catch(() => {});
+      return;
+    }
     }
     const introChannelId = config.channels?.["자기소개"];
     const targetIntroChannelId = introChannelId || INTRO_CHANNEL_ID;
