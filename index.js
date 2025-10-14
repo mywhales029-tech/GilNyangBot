@@ -70,7 +70,6 @@ banmalMode, banmalReplies, lastBanmal, jondaetReplies, lastJondaet
 botVersion, DEV_IDS
 pointsData, attendance, itemsData, marketData
 getRandomGrade(), getDestroyChance(), getUpgradeSuccessRate()
-getBotAsset()
 
 // === 기본 유틸 ===
 function validateIntro(content) {
