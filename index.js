@@ -126,6 +126,17 @@ client.on("messageCreate", async message => {
     ensureServerData(guildId);
 
     const config = loadData(guildId, "config");
+    // === 지정 채널에서 일반 메시지 삭제 ===
+    for (const category of ["자기소개", "입장", "명령어"]) {
+      const targetChannelId = config.channels?.[category];
+      if (!targetChannelId) continue;
+
+      // 명령어 채널이면서 명령어가 아닌 메시지이면 삭제
+      if (channel.id === targetChannelId && !content.startsWith("&")) {
+        await message.delete().catch(() => {}); // 삭제
+        return; // 이후 로직 종료
+      }
+    }
     const introChannelId = config.channels?.["자기소개"];
     const targetIntroChannelId = introChannelId || INTRO_CHANNEL_ID;
 
