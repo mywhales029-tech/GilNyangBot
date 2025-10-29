@@ -260,12 +260,6 @@ function saveData(guildId, file, data) {
     devLogError(null, null, error, "DATA_SAVE_ERR");
   }
 }
-
-banmalMode, banmalReplies, lastBanmal, jondaetReplies, lastJondaet
-botVersion, DEV_IDS
-pointsData, attendance, itemsData, marketData
-getRandomGrade(), getDestroyChance(), getUpgradeSuccessRate()
-
 // === 기본 유틸 ===
 function validateIntro(content) {
   return content.length >= 10 && /[가-힣]/.test(content);
@@ -1013,6 +1007,7 @@ client.on("messageCreate", async message => {
               if(!itemName) return message.reply("아이템명을 입력해주세요.");
               if((pointsData[author.id]?.points||0)<250) return message.reply("⚠️ 포인트 부족 (250pt 필요)");
               if(itemsData[author.id].length>=5) return message.reply("⚠️ 최대 5개까지 소유 가능");
+              if (!pointsData[author.id]) pointsData[author.id] = { username: author.username, points: 0 };
               pointsData[author.id].points = (pointsData[author.id]?.points||0)-250;
               const newItem = { name:itemName, grade:getRandomGrade(), plus:0, owner:author.id };
               itemsData[author.id].push(newItem);
@@ -1041,6 +1036,7 @@ client.on("messageCreate", async message => {
               // 강화비용 계산
               let cost=215+Math.floor(item.plus/10)*190;
               if((pointsData[author.id]?.points||0)<cost) return message.reply(`⚠️ 강화 포인트 부족 (${cost}pt 필요)`);
+              if (!pointsData[author.id]) pointsData[author.id] = { username: author.username, points: 0 };
               pointsData[author.id].points -= cost;
 
               const roll=Math.random();
@@ -1083,6 +1079,7 @@ client.on("messageCreate", async message => {
               if(itemIndex===-1) return message.reply("아이템 없음");
               const listingFee = 100;
               if((pointsData[author.id]?.points||0) < listingFee) return message.reply("⚠️ 판매 수수료 100pt 필요");
+              if (!pointsData[author.id]) pointsData[author.id] = { username: author.username, points: 0 };
               pointsData[author.id].points -= listingFee;
               manageBotTransaction(guildId, listingFee, 'income'); // 수수료 봇 자산으로 추가
               const item = itemsData[author.id].splice(itemIndex,1)[0];
@@ -1104,6 +1101,7 @@ client.on("messageCreate", async message => {
               if((pointsData[author.id]?.points||0) < item.price) return message.reply("포인트 부족");
               if(itemsData[author.id].length >= 5) return message.reply("최대 5개 소유 가능");
               // 구매 처리
+              if (!pointsData[author.id]) pointsData[author.id] = { username: author.username, points: 0 };
               pointsData[author.id].points -= item.price;
               // 구매자는 아이템 소유권 획득
               const purchasedItem = {...item, owner: author.id};
@@ -1373,6 +1371,7 @@ client.on("messageCreate", async message => {
               };
 
               // 생성 비용 차감
+              if (!pointsData[author.id]) pointsData[author.id] = { username: author.username, points: 0 };
               pointsData[author.id].points -= MIN_CREATE_STOCK_POINTS;
 
               saveStockData(stockData);
