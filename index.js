@@ -262,7 +262,48 @@ function saveData(guildId, file, data) {
 }
 // === 기본 유틸 ===
 function validateIntro(content) {
-  return content.length >= 10 && /[가-힣]/.test(content);
+  // 필수 항목 정의
+  const required = {
+    "디코닉": /디코닉\s*:\s*.+/,
+    "나이": /나이\s*:\s*\d{1,2}세?/,
+    "성별": /성별\s*:\s*(남성?|여성?|남자?|여자?)/,
+    "지역": /지역\s*:\s*.+/
+  };
+
+  // 각 필수 항목 검사
+  const missing = [];
+  for (const [field, pattern] of Object.entries(required)) {
+    if (!pattern.test(content)) {
+      missing.push(field);
+    }
+  }
+
+  // 검증 결과 반환
+  return {
+    isValid: missing.length === 0,
+    missing: missing,
+    content: content
+  };
+}
+
+function getIntroTemplate() {
+  return [
+    "📝 자기소개 양식",
+    "",
+    "아래 양식을 복사하여 작성해주세요.",
+    "",
+    "디코닉 : ",
+    "나이 : ",
+    "성별 : ",
+    "지역 : ",
+    "",
+    "✨ 예시)",
+    "",
+    "디코닉 : 길냥",
+    "나이 : 02",
+    "성별 : 남",
+    "지역 : 부산"
+  ].join("\n");
 }
 
 function getRandomReply(list, last) {
@@ -379,25 +420,105 @@ client.on("messageCreate", async message => {
 
     // ✅ 자기소개 감지 + 역할 지급
     if (targetIntroChannelId && message.channel.id === targetIntroChannelId) {
+      // 봇의 메시지는 무시
+      if (message.author.bot) return;
+
       const joinQueue = loadData(guildId, "joinQueue");
       const defaultRoleData = loadData(guildId, "defaultRole");
 
-      if (joinQueue[author.id]) {
-        if (validateIntro(content)) {
-          joinQueue[author.id].introDone = true;
-          saveData(guildId, "joinQueue", joinQueue);
+      // 자기소개 유효성 검사
+      const validation = validateIntro(content);
+      if (!validation.isValid) {
+        const template = getIntroTemplate();
+        const errorMsg = [
+          "⚠️ 자기소개 양식이 올바르지 않습니다.",
+          "",
+          `❌ 누락되거나 잘못된 항목: ${validation.missing.join(", ")}`,
+          "",
+          "✅ 아래 양식을 복사하여 작성해주세요.",
+          "ℹ️ 콜론(:) 뒤에 한 칸 띄우고 작성해주세요!",
+          "",
+          template,
+          "",
+          "⚠️ 주의사항:",
+          "• 위 양식을 그대로 복사해서 수정해주세요",
+          "• 각 항목의 콜론(:) 뒤에 반드시 한 칸을 띄워주세요",
+          "• 나이는 숫자로만 입력해주세요",
+          "• 성별은 남/여로만 입력해주세요"
+        ].join("\n");
+        
+        return message.reply(errorMsg).then(msg => {
+          setTimeout(() => msg.delete().catch(() => {}), 15000); // 15초 후 안내 메시지 삭제
+        });
+      }
 
-          if (defaultRoleData?.id) {
-            const role = guild.roles.cache.get(defaultRoleData.id);
-            const member = await guild.members.fetch(author.id).catch(() => null);
-            if (role && member) member.roles.add(role).catch(() => {});
-          }
-          return message.reply("✅ 자기소개 확인 완료! 기본 역할이 지급되었습니다.");
-        } else {
-          return message.reply("⚠️ 자기소개 양식이 올바르지 않습니다. 기본 역할이 지급되지 않았습니다.");
+      // 기존 자기소개가 있는지 확인
+      const member = await guild.members.fetch(author.id).catch(() => null);
+      if (!member) return;
+
+      // 기본 역할이 설정되어 있지 않으면 알림
+      if (!defaultRoleData?.id) {
+        return message.reply("⚠️ 서버에 기본 역할이 설정되어 있지 않습니다. 관리자에게 문의하세요.").then(msg => {
+          setTimeout(() => msg.delete().catch(() => {}), 5000);
+        });
+      }
+
+      // 이미 기본 역할을 가지고 있는지 확인
+      const role = guild.roles.cache.get(defaultRoleData.id);
+      if (!role) {
+        return message.reply("⚠️ 설정된 기본 역할을 찾을 수 없습니다. 관리자에게 문의하세요.").then(msg => {
+          setTimeout(() => msg.delete().catch(() => {}), 5000);
+        });
+      }
+
+      if (member.roles.cache.has(role.id)) {
+        return message.reply("ℹ️ 이미 기본 역할을 보유하고 있습니다.").then(msg => {
+          setTimeout(() => msg.delete().catch(() => {}), 5000);
+        });
+      }
+
+      // joinQueue에 없어도 자기소개하면 역할 지급 (복구 기능)
+      if (!joinQueue[author.id]) {
+        joinQueue[author.id] = {
+          joinTime: new Date().toISOString(),
+          introDone: false
+        };
+      }
+
+      // 자기소개 완료 처리
+      joinQueue[author.id].introDone = true;
+      saveData(guildId, "joinQueue", joinQueue);
+
+      // 역할 지급
+      try {
+        await member.roles.add(role);
+        const successMsg = await message.reply("✅ 자기소개 확인 완료! 기본 역할이 지급되었습니다.");
+        setTimeout(() => successMsg.delete().catch(() => {}), 5000);
+      } catch (error) {
+        console.error("역할 지급 실패:", error);
+        return message.reply("❌ 역할 지급 중 오류가 발생했습니다. 관리자에게 문의하세요.").then(msg => {
+          setTimeout(() => msg.delete().catch(() => {}), 5000);
+        });
+      }
+
+      // 로그 채널에 기록
+      const logChannelId = config.channels?.["로그"];
+      if (logChannelId) {
+        const logChannel = await guild.channels.fetch(logChannelId).catch(() => null);
+        if (logChannel?.isTextBased()) {
+          const embed = new EmbedBuilder()
+            .setTitle("✅ 자기소개 완료")
+            .setColor(0x00ff00)
+            .setDescription(`${author.tag}님이 자기소개를 작성했습니다.`)
+            .addFields(
+              { name: "멤버", value: `<@${author.id}>`, inline: true },
+              { name: "역할", value: role.name, inline: true },
+              { name: "자기소개", value: content.length > 1000 ? content.slice(0, 997) + "..." : content }
+            )
+            .setTimestamp();
+          logChannel.send({ embeds: [embed] }).catch(() => {});
         }
       }
-      return;
     }
 
     // === 명령어 처리 ===
@@ -1749,27 +1870,84 @@ client.on("guildMemberAdd", async member => {
   }
 });
 
+// 자기소개 미작성자 확인 및 강퇴 (10분마다 실행)
 setInterval(async () => {
   for (const guild of client.guilds.cache.values()) {
     const guildId = guild.id;
     ensureServerData(guildId);
+    const config = loadData(guildId, "config");
     const joinQueue = loadData(guildId, "joinQueue");
     let updated = false;
     const now = new Date();
+
+    // 로그 채널 확인
+    const logChannelId = config.channels?.["로그"];
+    const logChannel = logChannelId ? await guild.channels.fetch(logChannelId).catch(() => null) : null;
+
     for (const [uid, info] of Object.entries(joinQueue)) {
       if (!info.introDone) {
         const joinTime = new Date(info.joinTime);
-        if (now - joinTime > 24 * 60 * 60 * 1000) {
-          const m = await guild.members.fetch(uid).catch(() => null);
-          if (m) await m.kick("자기소개 미작성").catch(() => { });
+        const timeLeft = 24 * 60 * 60 * 1000 - (now - joinTime); // 남은 시간 (ms)
+
+        if (timeLeft <= 0) {
+          // 강퇴 처리
+          const member = await guild.members.fetch(uid).catch(() => null);
+          if (member) {
+            try {
+              await member.kick("자기소개 미작성 (24시간 초과)");
+              
+              // 로그 기록
+              if (logChannel?.isTextBased()) {
+                const embed = new EmbedBuilder()
+                  .setTitle("🚫 자기소개 미작성으로 강퇴")
+                  .setColor(0xff0000)
+                  .addFields(
+                    { name: "멤버", value: member.user.tag, inline: true },
+                    { name: "ID", value: uid, inline: true },
+                    { name: "입장 시각", value: new Date(joinTime).toLocaleString("ko-KR"), inline: true }
+                  )
+                  .setTimestamp();
+                logChannel.send({ embeds: [embed] }).catch(() => {});
+              }
+            } catch (error) {
+              console.error(`강퇴 실패 (${uid}):`, error);
+              if (logChannel?.isTextBased()) {
+                logChannel.send(`⚠️ ${member.user.tag} (${uid}) 강퇴 실패: ${error.message}`).catch(() => {});
+              }
+              continue; // 강퇴 실패시 큐에서 제거하지 않음
+            }
+          }
+          delete joinQueue[uid];
+          updated = true;
+        } else if (timeLeft <= 60 * 60 * 1000) { // 1시간 이하 남음
+          // 경고 DM 발송
+          const member = await guild.members.fetch(uid).catch(() => null);
+          if (member) {
+            const introChannelId = config.channels?.["자기소개"] || INTRO_CHANNEL_ID;
+            const timeLeftMinutes = Math.ceil(timeLeft / (60 * 1000));
+            
+            member.send(
+              `⚠️ **자기소개 작성 필요**\n` +
+              `서버: ${guild.name}\n\n` +
+              `자기소개를 작성하지 않으면 ${timeLeftMinutes}분 후 자동으로 강퇴됩니다.\n` +
+              `자기소개 채널: <#${introChannelId}>\n\n` +
+              `※ 자기소개는 10자 이상의 한글을 포함해야 합니다.`
+            ).catch(() => {}); // DM 실패는 무시
+          }
+        }
+      } else if (info.introDone) {
+        // 자기소개 완료된 항목은 일주일 후 큐에서 제거
+        const joinTime = new Date(info.joinTime);
+        if (now - joinTime > 7 * 24 * 60 * 60 * 1000) {
           delete joinQueue[uid];
           updated = true;
         }
       }
     }
+    
     if (updated) saveData(guildId, "joinQueue", joinQueue);
   }
-}, 10 * 60 * 1000);
+}, 10 * 60 * 1000); // 10분마다 실행
 
 
 // === 로그인 ===
