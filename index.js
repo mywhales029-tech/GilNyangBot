@@ -199,20 +199,155 @@ client.on("messageCreate", async message => {
     if (!cmd) return;;
 
     switch (cmd) {
-      case "채널지정": {
+      case "채널설정": {
         if (!message.member.permissions.has("ManageGuild"))
           return message.reply("⚠️ 서버 관리 권한이 필요합니다.");
 
-        const category = args[0];
-        const channel = message.mentions.channels.first();
-        if (!["자기소개", "입장", "명령어"].includes(category))
-          return message.reply("⚠️ 분류는 [자기소개, 입장, 명령어] 중 하나여야 합니다.");
-        if (!channel) return message.reply("⚠️ 채널을 멘션해주세요.");
+        const subCommand = args[0]?.toLowerCase();
+        if (!subCommand) {
+          const embed = new EmbedBuilder()
+            .setTitle("📋 채널 설정 도움말")
+            .setColor(0x00ff00)
+            .setDescription("채널 설정 관련 명령어 안내")
+            .addFields(
+              { name: "채널 지정", value: "`&채널설정 지정 <분류> <#채널>`\n- 분류: 자기소개/입장/명령어/공지/로그" },
+              { name: "채널 해제", value: "`&채널설정 해제 <분류>`\n- 설정된 채널을 해제합니다." },
+              { name: "채널 목록", value: "`&채널설정 목록`\n- 현재 설정된 채널들을 확인합니다." },
+              { name: "채널 초기화", value: "`&채널설정 초기화`\n- 모든 채널 설정을 초기화합니다." }
+            )
+            .setFooter({ text: "관리자 전용 명령어입니다." });
+          return message.reply({ embeds: [embed] });
+        }
 
         config.channels = config.channels || {};
-        config.channels[category] = channel.id;
-        saveData(guildId, "config", config);
-        return message.reply(`✅ ${category} 채널이 ${channel}로 지정되었습니다.`);
+
+        switch (subCommand) {
+          case "지정": {
+            const category = args[1]?.toLowerCase();
+            const channel = message.mentions.channels.first();
+            const validCategories = ["자기소개", "입장", "명령어", "공지", "로그"];
+            
+            if (!validCategories.includes(category))
+              return message.reply(`⚠️ 분류는 [${validCategories.join("/")}] 중 하나여야 합니다.`);
+            if (!channel) 
+              return message.reply("⚠️ 채널을 멘션해주세요.");
+            if (channel.type !== ChannelType.GuildText)
+              return message.reply("⚠️ 텍스트 채널만 지정할 수 있습니다.");
+
+            config.channels[category] = channel.id;
+            saveData(guildId, "config", config);
+            
+            const embed = new EmbedBuilder()
+              .setTitle("✅ 채널 설정 완료")
+              .setColor(0x00ff00)
+              .setDescription(`${category} 채널이 ${channel}로 지정되었습니다.`)
+              .addFields(
+                { name: "분류", value: category, inline: true },
+                { name: "채널", value: channel.toString(), inline: true }
+              )
+              .setTimestamp();
+            return message.reply({ embeds: [embed] });
+          }
+
+          case "해제": {
+            const category = args[1]?.toLowerCase();
+            if (!category || !config.channels[category])
+              return message.reply("⚠️ 해제할 분류를 지정해주세요.");
+
+            const oldChannel = guild.channels.cache.get(config.channels[category]);
+            delete config.channels[category];
+            saveData(guildId, "config", config);
+
+            const embed = new EmbedBuilder()
+              .setTitle("🗑️ 채널 설정 해제")
+              .setColor(0xff0000)
+              .setDescription(`${category} 채널 설정이 해제되었습니다.`)
+              .addFields(
+                { name: "분류", value: category, inline: true },
+                { name: "이전 채널", value: oldChannel ? oldChannel.toString() : "알 수 없음", inline: true }
+              )
+              .setTimestamp();
+            return message.reply({ embeds: [embed] });
+          }
+
+          case "목록": {
+            const channelList = Object.entries(config.channels).map(([category, channelId]) => {
+              const channel = guild.channels.cache.get(channelId);
+              return `**${category}**: ${channel ? channel.toString() : "❌ 삭제됨"}`;
+            }).join("\n") || "설정된 채널이 없습니다.";
+
+            const embed = new EmbedBuilder()
+              .setTitle("📋 채널 설정 목록")
+              .setColor(0x0099ff)
+              .setDescription(channelList)
+              .setTimestamp();
+            return message.reply({ embeds: [embed] });
+          }
+
+          case "초기화": {
+            const row = new ActionRowBuilder()
+              .addComponents(
+                new ButtonBuilder()
+                  .setCustomId("channel_reset_confirm")
+                  .setLabel("초기화")
+                  .setStyle(ButtonStyle.Danger),
+                new ButtonBuilder()
+                  .setCustomId("channel_reset_cancel")
+                  .setLabel("취소")
+                  .setStyle(ButtonStyle.Secondary)
+              );
+
+            const confirmMsg = await message.reply({
+              content: "⚠️ 모든 채널 설정을 초기화하시겠습니까?",
+              components: [row]
+            });
+
+            const collector = confirmMsg.createMessageComponentCollector({
+              time: 15000,
+              max: 1,
+              filter: i => i.user.id === author.id
+            });
+
+            collector.on("collect", async i => {
+              if (i.customId === "channel_reset_cancel") {
+                await i.update({ content: "❌ 초기화가 취소되었습니다.", components: [] });
+                return;
+              }
+
+              if (i.customId === "channel_reset_confirm") {
+                const oldChannels = { ...config.channels };
+                config.channels = {};
+                saveData(guildId, "config", config);
+
+                const embed = new EmbedBuilder()
+                  .setTitle("🗑️ 채널 설정 초기화 완료")
+                  .setColor(0xff0000)
+                  .setDescription("모든 채널 설정이 초기화되었습니다.")
+                  .addFields({
+                    name: "이전 설정",
+                    value: Object.entries(oldChannels)
+                      .map(([cat, id]) => `${cat}: <#${id}>`)
+                      .join("\n") || "없음"
+                  })
+                  .setTimestamp();
+                await i.update({ content: null, embeds: [embed], components: [] });
+              }
+            });
+
+            collector.on("end", async (collected, reason) => {
+              if (reason === "time") {
+                await confirmMsg.edit({
+                  content: "⏳ 시간이 초과되어 초기화가 취소되었습니다.",
+                  components: []
+                });
+              }
+            });
+            return;
+          }
+
+          default:
+            return message.reply("⚠️ 올바른 하위 명령어를 입력해주세요. `&채널설정` 으로 도움말을 확인하세요.");
+        }
       }
       case "안녕": {
         const reply = banmalMode ? getRandomReply(banmalReplies, lastBanmal) : getRandomReply(jondaetReplies, lastJondaet);
