@@ -61,7 +61,14 @@ const STOCK_PRICE_CHANGE_RATES = [-0.15, -0.1, -0.05, -0.02, 0, 0.02, 0.05, 0.1,
 
 // 주식 시스템 함수들
 function loadStockData() {
-  const stockData = loadData("global", "stocks") || {
+  const loaded = loadData("global", "stocks");
+  // loadData may return an empty object {} if file doesn't exist or is empty.
+  // In that case we must fall back to default initial market structure.
+  if (loaded && typeof loaded === 'object' && Object.prototype.hasOwnProperty.call(loaded, 'stocks') && loaded.stocks && typeof loaded.stocks === 'object') {
+    return loaded;
+  }
+
+  const stockData = {
     stocks: {
       "해피캐피탈": { price: 4300, initialPrice: 4300, totalShares: 1000000, available: true, owner: "system", lastUpdate: null, history: [] },
       "냐옹전자": { price: 18700, initialPrice: 18700, totalShares: 1000000, available: true, owner: "system", lastUpdate: null, history: [] },
