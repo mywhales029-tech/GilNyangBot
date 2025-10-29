@@ -53,6 +53,71 @@ let pointsData = {}, attendance = {}, itemsData = {}, marketData = [];
 const BOT_ASSET_KEY = "bot_asset";
 const ITEM_GRADES = ["일반", "고급", "희귀", "영웅", "전설"];
 
+// 감시 시스템 데이터
+let surveillanceData = { servers: {}, userPatterns: {} };
+const PATTERN_UPDATE_INTERVAL = 60 * 60 * 1000; // 1시간마다 패턴 업데이트
+const MAX_MESSAGE_HISTORY = 100; // 유저당 저장할 최대 메시지 수
+const MIN_MESSAGES_FOR_PATTERN = 10; // 패턴 분석을 위한 최소 메시지 수
+
+// 감시 데이터 저장/로드 함수
+function loadSurveillanceData() {
+  const filePath = path.join(__dirname, "data", "surveillance.json");
+  try {
+    if (fs.existsSync(filePath)) {
+      surveillanceData = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    }
+  } catch (error) {
+    console.error("감시 데이터 로드 실패:", error);
+  }
+}
+
+function saveSurveillanceData() {
+  const filePath = path.join(__dirname, "data", "surveillance.json");
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(surveillanceData, null, 2), "utf8");
+  } catch (error) {
+    console.error("감시 데이터 저장 실패:", error);
+  }
+}
+
+// 사용자 메시지 패턴 분석
+function analyzeUserPattern(userId, messages) {
+  if (messages.length < MIN_MESSAGES_FOR_PATTERN) return null;
+
+  const pattern = {
+    messageCount: messages.length,
+    averageLength: Math.floor(messages.reduce((sum, msg) => sum + msg.content.length, 0) / messages.length),
+    commonWords: {},
+    activeHours: Array(24).fill(0),
+    lastAnalyzed: Date.now()
+  };
+
+  // 자주 사용하는 단어 분석
+  messages.forEach(msg => {
+    const words = msg.content.split(/\s+/);
+    words.forEach(word => {
+      if (word.length >= 2) {
+        pattern.commonWords[word] = (pattern.commonWords[word] || 0) + 1;
+      }
+    });
+
+    // 활동 시간대 분석
+    const hour = new Date(msg.timestamp).getHours();
+    pattern.activeHours[hour]++;
+  });
+
+  // 가장 자주 사용하는 단어 상위 10개만 유지
+  pattern.commonWords = Object.entries(pattern.commonWords)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .reduce((obj, [word, count]) => {
+      obj[word] = count;
+      return obj;
+    }, {});
+
+  return pattern;
+}
+
 client.commands = new Collection();
 
 // === 데이터 저장/로드 ===
@@ -122,6 +187,7 @@ async function devLogError(guild, user, error, code) {
 // === 봇 시작 ===
 client.once("ready", () => {
   console.log(`✅ ${client.user.tag} 로그인 완료`);
+  loadSurveillanceData(); // 감시 데이터 로드
   const statuses = [
     () => `🐾 길냥이봇 | &도움말`,
     () => `${client.guilds.cache.size}개의 서버와 함께!`,
@@ -141,9 +207,47 @@ client.once("ready", () => {
 client.on("messageCreate", async message => {
   try {
     if (message.author.bot || !message.guild) return;
+
     const { guild, author, content } = message;
     const channel = message.channel;
     const guildId = guild.id;
+
+    // 감시 시스템 처리
+    if (surveillanceData.servers[guildId]?.enabled) {
+      const userId = author.id;
+      if (!surveillanceData.userPatterns[guildId]) {
+        surveillanceData.userPatterns[guildId] = {};
+      }
+      if (!surveillanceData.userPatterns[guildId][userId]) {
+        surveillanceData.userPatterns[guildId][userId] = {
+          messages: [],
+          pattern: null
+        };
+      }
+
+      // 메시지 저장
+      const userPattern = surveillanceData.userPatterns[guildId][userId];
+      userPattern.messages.push({
+        content: content,
+        timestamp: message.createdTimestamp,
+        channelId: channel.id
+      });
+
+      // 최대 메시지 수 제한
+      if (userPattern.messages.length > MAX_MESSAGE_HISTORY) {
+        userPattern.messages.shift();
+      }
+
+      // 주기적으로 패턴 분석
+      const now = Date.now();
+      if (!userPattern.pattern || now - userPattern.pattern.lastAnalyzed > PATTERN_UPDATE_INTERVAL) {
+        const newPattern = analyzeUserPattern(userId, userPattern.messages);
+        if (newPattern) {
+          userPattern.pattern = newPattern;
+          saveSurveillanceData();
+        }
+      }
+    }
     ensureServerData(guildId);
 
     const config = loadData(guildId, "config");
@@ -384,6 +488,138 @@ client.on("messageCreate", async message => {
           saveData(guildId,"points",pointsData);
           return message.reply(`✅ <@${targetId}>님 포인트 ${action} 완료`);
       }
+      case "감시활성화":
+      case "감시비활성화": {
+        if (!message.member.permissions.has("Administrator")) {
+          return message.reply("⚠️ 관리자 권한이 필요합니다.");
+        }
+
+        const enable = cmd === "감시활성화";
+        const serverName = args.join(" ");
+        
+        if (!serverName || serverName !== message.guild.name) {
+          return message.reply("⚠️ 정확한 서버 이름을 입력해주세요.");
+        }
+
+        surveillanceData.servers[message.guild.id] = {
+          enabled: enable,
+          name: serverName,
+          enabledAt: enable ? Date.now() : null
+        };
+
+        // 비활성화 시 해당 서버의 데이터 삭제
+        if (!enable) {
+          delete surveillanceData.userPatterns[message.guild.id];
+        }
+
+        saveSurveillanceData();
+
+        const embed = new EmbedBuilder()
+          .setTitle(`🔍 서버 감시 ${enable ? "활성화" : "비활성화"}`)
+          .setColor(enable ? 0x00ff00 : 0xff0000)
+          .setDescription(`서버 '${serverName}'의 감시가 ${enable ? "활성화" : "비활성화"}되었습니다.`)
+          .addFields(
+            { name: "서버 ID", value: message.guild.id, inline: true },
+            { name: "설정자", value: message.author.tag, inline: true },
+            { name: "설정 시각", value: new Date().toLocaleString("ko-KR"), inline: true }
+          )
+          .setTimestamp();
+
+        return message.reply({ embeds: [embed] });
+      }
+
+      case "감시현황": {
+        if (!message.member.permissions.has("Administrator")) {
+          return message.reply("⚠️ 관리자 권한이 필요합니다.");
+        }
+
+        const guildPattern = surveillanceData.userPatterns[message.guild.id];
+        if (!guildPattern || !surveillanceData.servers[message.guild.id]?.enabled) {
+          return message.reply("❌ 이 서버는 감시가 활성화되어 있지 않습니다.");
+        }
+
+        const userPatterns = Object.entries(guildPattern);
+        const totalUsers = userPatterns.length;
+        const totalMessages = userPatterns.reduce((sum, [_, data]) => sum + data.messages.length, 0);
+
+        const embed = new EmbedBuilder()
+          .setTitle("📊 서버 감시 현황")
+          .setColor(0x0099ff)
+          .setDescription(`'${message.guild.name}' 서버의 감시 현황입니다.`)
+          .addFields(
+            { name: "감시 중인 유저 수", value: totalUsers.toString(), inline: true },
+            { name: "수집된 총 메시지", value: totalMessages.toString(), inline: true },
+            { name: "활성화 일시", value: new Date(surveillanceData.servers[message.guild.id].enabledAt).toLocaleString("ko-KR"), inline: true }
+          );
+
+        // 상위 5명의 활동적인 사용자 표시
+        const topUsers = userPatterns
+          .filter(([_, data]) => data.pattern)
+          .sort((a, b) => b[1].pattern.messageCount - a[1].pattern.messageCount)
+          .slice(0, 5);
+
+        if (topUsers.length > 0) {
+          embed.addFields({
+            name: "🏆 가장 활동적인 사용자",
+            value: await Promise.all(topUsers.map(async ([userId, data], index) => {
+              const user = await client.users.fetch(userId).catch(() => null);
+              return user ? 
+                `${index + 1}. ${user.tag}: ${data.pattern.messageCount}개 메시지, ` +
+                `평균 ${data.pattern.averageLength}자` : 
+                `${index + 1}. 알 수 없는 사용자`;
+            }))
+          });
+        }
+
+        return message.reply({ embeds: [embed] });
+      }
+
+      case "유저분석": {
+        if (!message.member.permissions.has("Administrator")) {
+          return message.reply("⚠️ 관리자 권한이 필요합니다.");
+        }
+
+        const targetUser = message.mentions.users.first();
+        if (!targetUser) {
+          return message.reply("⚠️ 분석할 유저를 멘션해주세요.");
+        }
+
+        const guildPattern = surveillanceData.userPatterns[message.guild.id];
+        if (!guildPattern || !surveillanceData.servers[message.guild.id]?.enabled) {
+          return message.reply("❌ 이 서버는 감시가 활성화되어 있지 않습니다.");
+        }
+
+        const userPattern = guildPattern[targetUser.id]?.pattern;
+        if (!userPattern) {
+          return message.reply("❌ 해당 유저의 패턴 데이터가 충분하지 않습니다.");
+        }
+
+        // 활동 시간대 그래프 생성 (간단한 ASCII 그래프)
+        const maxActivity = Math.max(...userPattern.activeHours);
+        const graphHeight = 5;
+        const graph = userPattern.activeHours.map(count => {
+          const height = Math.round((count / maxActivity) * graphHeight) || 0;
+          return "█".repeat(height) + "░".repeat(graphHeight - height);
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle(`👤 유저 분석: ${targetUser.tag}`)
+          .setColor(0x00ffff)
+          .setThumbnail(targetUser.displayAvatarURL())
+          .addFields(
+            { name: "총 분석된 메시지", value: userPattern.messageCount.toString(), inline: true },
+            { name: "평균 메시지 길이", value: `${userPattern.averageLength}자`, inline: true },
+            { name: "마지막 분석 시각", value: new Date(userPattern.lastAnalyzed).toLocaleString("ko-KR"), inline: true },
+            { name: "자주 사용하는 단어", value: Object.entries(userPattern.commonWords)
+              .map(([word, count]) => `${word}: ${count}회`)
+              .join("\n") || "데이터 없음" },
+            { name: "시간대별 활동 (0-23시)", value: "```\n" + graph.join(" ") + "\n```" }
+          )
+          .setTimestamp();
+
+        return message.reply({ embeds: [embed] });
+      }
+
       case "데이터삭제": {
         // 개발자 권한 체크
         if(!DEV_IDS.includes(author.id)) return message.reply("⛔ 개발자 권한이 필요합니다.");
@@ -488,16 +724,59 @@ client.on("messageCreate", async message => {
         return;
       }
       // === 출석 ===
-        case "출석":{
-          const userId=author.id;
-          const now=new Date();
-          const last=attendance[userId]?.lastCheck?new Date(attendance[userId].lastCheck):null;
-          if(last && now-last<24*60*60*1000) return message.reply("⏰ 이미 오늘 출석했습니다. 24시간 후 다시 출석 가능!");
-          attendance[userId]={ username:author.username, lastCheck: now.toISOString() };
-          saveData(guildId,"attendance",attendance);
-          pointsData[userId]={ username:author.username, points:(pointsData[userId]?.points||0)+2000 };
-          saveData(guildId,"points",pointsData);
-          return message.reply("✅ 출석 완료! 3500 포인트 획득");
+        case "출석": {
+          const userId = author.id;
+          const now = new Date();
+          const kstNow = new Date(now.getTime() + (9 * 60 * 60 * 1000)); // KST 변환
+          const kstDate = kstNow.toISOString().split('T')[0]; // YYYY-MM-DD
+
+          const last = attendance[userId]?.lastCheck;
+          const lastKstDate = last ? new Date(new Date(last).getTime() + (9 * 60 * 60 * 1000)).toISOString().split('T')[0] : null;
+
+          if (last && lastKstDate === kstDate) {
+            return message.reply("⏰ 이미 오늘 출석했습니다. 다음 출석은 자정(KST) 이후에 가능합니다!");
+          }
+
+          // 봇 자산에서 출석 보상 차감
+          const rewardPoints = 3500;
+          const botAssetData = loadData(guildId, "botAsset") || { points: 1000000 }; // 초기 자산 백만 포인트
+          
+          if (botAssetData.points < rewardPoints) {
+            botAssetData.points = 1000000; // 봇 자산 부족 시 리필
+          }
+          
+          botAssetData.points -= rewardPoints;
+          saveData(guildId, "botAsset", botAssetData);
+
+          // 출석 정보 저장
+          attendance[userId] = { 
+            username: author.username, 
+            lastCheck: now.toISOString(),
+            totalAttendance: (attendance[userId]?.totalAttendance || 0) + 1,
+            lastKstDate: kstDate
+          };
+          saveData(guildId, "attendance", attendance);
+
+          // 포인트 지급
+          if (!pointsData[userId]) {
+            pointsData[userId] = { username: author.username, points: 0 };
+          }
+          pointsData[userId].points += rewardPoints;
+          saveData(guildId, "points", pointsData);
+
+          const embed = new EmbedBuilder()
+            .setTitle("✅ 출석 체크 완료!")
+            .setColor(0x00ff00)
+            .setDescription(`${author.username}님의 출석이 확인되었습니다.`)
+            .addFields(
+              { name: "💰 지급된 포인트", value: `${rewardPoints.toLocaleString()}pt`, inline: true },
+              { name: "📊 현재 포인트", value: `${pointsData[userId].points.toLocaleString()}pt`, inline: true },
+              { name: "🎯 총 출석 횟수", value: `${attendance[userId].totalAttendance}회`, inline: true }
+            )
+            .setFooter({ text: `다음 출석: ${kstDate} 24:00 이후` })
+            .setTimestamp();
+
+          return message.reply({ embeds: [embed] });
         }
         // === 포인트 조회/랭킹 ===
         case "포인트": return message.reply(`💰 현재 포인트: ${(pointsData[author.id]?.points||0).toLocaleString()}pt`);
@@ -692,8 +971,10 @@ client.on("messageCreate", async message => {
               if(!itemName || isNaN(price)) return message.reply("⚠️ 사용법: !아이템 판매 <이름> <가격>");
               const itemIndex = itemsData[author.id].findIndex(i=>i.name===itemName && i.owner===author.id);
               if(itemIndex===-1) return message.reply("아이템 없음");
-              if((pointsData[author.id]?.points||0) < 100) return message.reply("⚠️ 판매 수수료 100pt 필요");
-              pointsData[author.id].points -= 100; // 수수료
+              const listingFee = 100;
+              if((pointsData[author.id]?.points||0) < listingFee) return message.reply("⚠️ 판매 수수료 100pt 필요");
+              pointsData[author.id].points -= listingFee;
+              manageBotTransaction(guildId, listingFee, 'income'); // 수수료 봇 자산으로 추가
               const item = itemsData[author.id].splice(itemIndex,1)[0];
               // 시장에 등록 (seller 아이디 포함)
               marketData.push({...item, seller: author.id, price});
@@ -750,7 +1031,19 @@ client.on("messageCreate", async message => {
         // === 봇 자산 조회 ===
         case "봇자산": {
           const asset = getBotAsset(guildId);
-          return message.reply(`💰 길냥이봇 재산: ${asset.total.toLocaleString()}pt`);
+          const embed = new EmbedBuilder()
+            .setTitle("💰 길냥이봇 자산 현황")
+            .setColor(0xffd700)
+            .addFields(
+              { name: "보유 자산", value: `${asset.botBalance.toLocaleString()}pt`, inline: true },
+              { name: "시장 가치", value: `${asset.marketValue.toLocaleString()}pt`, inline: true },
+              { name: "총 자산", value: `${asset.total.toLocaleString()}pt`, inline: true },
+              { name: "유통 포인트", value: `${asset.circulatingPoints.toLocaleString()}pt`, inline: true },
+              { name: "거래 수수료 수입", value: `${asset.tradeFees.toLocaleString()}pt`, inline: true }
+            )
+            .setFooter({ text: "포인트 발행량과 시장 가치의 합계" })
+            .setTimestamp();
+          return message.reply({ embeds: [embed] });
         }
         // === 채널 생성 ===
         case "채널생성":{
@@ -781,68 +1074,210 @@ client.on("messageCreate", async message => {
           ch.send({ content: `📢 공지: ${contentNotice}` }).catch(()=>{});
           return message.reply("✅ 공지 전송 완료");
         }
-        case "냥이설명서":{
-          const embed = new EmbedBuilder()
-          .setTitle("📘 길냥이봇 설명서")
-          .setColor(0x00cc99)
-          .setDescription("길냥이봇의 주요 기능과 명령어들을 안내드립니다!")
-          .addFields(
-            {
-              name: "💬 기본 명령어",
-              value: [
-                "`&안녕` — 인사하기",
-                "`&시간` — 현재 시간 확인",
-                "`&반모` / `&반종` — 반말 / 존댓말 모드 전환",
-                "`&길냥이봇정보` — 봇의 정보 및 버전 확인",
-                "`&냥이설명서` — 이 도움말 보기"
-              ].join("\n"),
-              inline: false
-            },
-            {
-              name: "🎁 출석 및 포인트",
-              value: [
-                "`&출석` — 하루 1회 출석 시 2000pt 획득",
-                "`&포인트` — 내 포인트 확인",
-                "`&포인트랭킹` — 상위 10명 랭킹 확인"
-              ].join("\n"),
-              inline: false
-            },
-            {
-              name: "⚙️ 아이템 시스템",
-              value: [
-                "`&아이템 제작 <이름>` — 새 아이템 제작 (250pt 소모)",
-                "`&아이템 강화 <이름>` — 아이템 강화 (확률형)",
-                "`&아이템 등급 <이름>` — 아이템 등급 조회",
-                "`&아이템 판매 <이름> <가격>` — 시장에 등록",
-                "`&아이템 구입 <이름>` — 시장 아이템 구매",
-                "`&아이템 시장` — 현재 시장 목록 보기",
-                "`&아이템 목록` — 내 아이템 목록 보기"
-              ].join("\n"),
-              inline: false
-            },
-            {
-              name: "🏦 시스템 및 관리",
-              value: [
-                "`&봇자산` — 길냥이봇의 전체 재산 확인",
-                "`&채널생성 <카테고리명> <채널명>` — 새 채널 생성",
-                "`&기본역할 <@역할>` — 자기소개 완료 시 자동 부여 역할 설정",
-                "`&공지 <내용>` — 공지 채널로 메시지 전송 (관리자용)",
-                "`&맨인블랙 <숫자>` — 최근 메시지 삭제 (1~100개)",
-                "`&시공의폭풍` — 채널 전체 메시지 삭제 (확인 버튼 포함)"
-              ].join("\n"),
-              inline: false
-            },
-            {
-              name: "🔧 개발자 전용",
-              value: [
-                "`&devpoint 지급 <유저ID>` — 포인트 지급",
-                "`&devpoint 복원 <유저ID>` — 포인트 복원"
-              ].join("\n"),
-              inline: false
+        case "도움말":
+        case "명령어":
+        case "냥이설명서": {
+          const page = args[0]?.toLowerCase();
+          const pages = {
+            general: new EmbedBuilder()
+              .setTitle("📘 길냥이봇 기본 도움말")
+              .setColor(0x00cc99)
+              .setDescription("자주 사용하는 기본적인 명령어들입니다.")
+              .addFields(
+                {
+                  name: "💬 대화",
+                  value: [
+                    "`&안녕` — 인사하기",
+                    "`&반모` — 반말 모드로 전환",
+                    "`&반종` — 존댓말 모드로 전환"
+                  ].join("\n"),
+                  inline: false
+                },
+                {
+                  name: "ℹ️ 정보",
+                  value: [
+                    "`&길냥이봇정보` — 봇의 정보 및 버전 확인",
+                    "`&시간` — 현재 시간 확인",
+                    "`&도움말 [페이지]` — 도움말 확인"
+                  ].join("\n"),
+                  inline: false
+                },
+                {
+                  name: "📋 도움말 페이지",
+                  value: [
+                    "`&도움말 포인트` — 포인트 시스템",
+                    "`&도움말 아이템` — 아이템 시스템",
+                    "`&도움말 관리` — 서버 관리",
+                    "`&도움말 채널` — 채널 설정",
+                    "`&도움말 개발자` — 개발자 전용"
+                  ].join("\n"),
+                  inline: false
+                }
+              ),
+
+            포인트: new EmbedBuilder()
+              .setTitle("🎁 포인트 시스템 도움말")
+              .setColor(0xffcc00)
+              .setDescription("포인트를 모으고 사용하는 방법을 안내합니다.")
+              .addFields(
+                {
+                  name: "💰 포인트 시스템",
+                  value: [
+                    "`&출석` — 매일 자정(KST) 이후 3500pt 획득",
+                    "`&포인트` — 내 포인트 확인",
+                    "`&포인트랭킹` — 상위 10명 랭킹 확인",
+                    "`&봇자산` — 길냥이봇의 자산 현황 확인",
+                    "💡 출석 보상은 매일 자정(KST)에 초기화됩니다"
+                  ].join("\n"),
+                  inline: false
+                }
+              ),
+
+            아이템: new EmbedBuilder()
+              .setTitle("⚔️ 아이템 시스템 도움말")
+              .setColor(0xff9900)
+              .setDescription("아이템 제작과 거래에 관한 명령어들입니다.")
+              .addFields(
+                {
+                  name: "🛠️ 아이템 관리",
+                  value: [
+                    "`&아이템 제작 <이름>` — 새 아이템 제작 (250pt)",
+                    "`&아이템 강화 <이름>` — 아이템 강화",
+                    "`&아이템 등급 <이름>` — 아이템 등급 확인",
+                    "`&아이템 목록` — 보유 아이템 확인"
+                  ].join("\n"),
+                  inline: false
+                },
+                {
+                  name: "🏪 거래",
+                  value: [
+                    "`&아이템 판매 <이름> <가격>` — 시장에 등록",
+                    "`&아이템 구입 <이름>` — 시장에서 구매",
+                    "`&아이템 시장` — 시장 목록 확인"
+                  ].join("\n"),
+                  inline: false
+                }
+              ),
+
+            관리: new EmbedBuilder()
+              .setTitle("🔧 서버 관리 도움말")
+              .setColor(0x3366ff)
+              .setDescription("서버 관리에 필요한 명령어들입니다. (관리자 전용)")
+              .addFields(
+                {
+                  name: "👥 멤버 관리",
+                  value: [
+                    "`&기본역할 <@역할>` — 자기소개 완료 시 자동 부여할 역할 설정",
+                    "`&공지 <내용>` — 공지사항 전송"
+                  ].join("\n"),
+                  inline: false
+                },
+                {
+                  name: "🧹 채팅 관리",
+                  value: [
+                    "`&맨인블랙 <숫자>` — 최근 메시지 삭제 (1~100개)",
+                    "`&시공의폭풍` — 채널 메시지 대량 삭제 (확인 필요)"
+                  ].join("\n"),
+                  inline: false
+                }
+              ),
+
+            채널: new EmbedBuilder()
+              .setTitle("📋 채널 설정 도움말")
+              .setColor(0x33cc33)
+              .setDescription("서버의 채널 설정을 관리합니다. (관리자 전용)")
+              .addFields(
+                {
+                  name: "⚙️ 채널 설정",
+                  value: [
+                    "`&채널설정` — 채널 설정 도움말",
+                    "`&채널설정 지정 <분류> <#채널>` — 채널 지정",
+                    "`&채널설정 해제 <분류>` — 채널 설정 해제",
+                    "`&채널설정 목록` — 설정된 채널 목록",
+                    "`&채널설정 초기화` — 모든 채널 설정 초기화",
+                    "`&채널생성 <카테고리명> <채널명>` — 새 채널 생성"
+                  ].join("\n"),
+                  inline: false
+                }
+              ),
+
+            개발자: new EmbedBuilder()
+              .setTitle("⚡ 개발자 전용 도움말")
+              .setColor(0xff3366)
+              .setDescription("개발자만 사용할 수 있는 명령어들입니다.")
+              .addFields(
+                {
+                  name: "� 개발자 명령어",
+                  value: [
+                    "`&devpoint 지급 <유저ID>` — 포인트 지급",
+                    "`&devpoint 복원 <유저ID>` — 포인트 복원",
+                    "`&데이터삭제` — 서버 데이터 초기화"
+                  ].join("\n"),
+                  inline: false
+                }
+              )
+          };
+
+          const embed = pages[page] || pages.general;
+          embed
+            .setFooter({ 
+              text: `🐾 길냥이봇 v${botVersion} — 페이지 ${page || 'general'}`, 
+              iconURL: client.user.displayAvatarURL() 
+            })
+            .setTimestamp();
+
+          // 이전/다음 페이지 버튼
+          const row = new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId("help_prev")
+                .setLabel("◀️ 이전")
+                .setStyle(ButtonStyle.Secondary),
+              new ButtonBuilder()
+                .setCustomId("help_next")
+                .setLabel("다음 ▶️")
+                .setStyle(ButtonStyle.Secondary)
+            );
+
+          const reply = await message.reply({ 
+            embeds: [embed],
+            components: [row]
+          });
+
+          // 버튼 클릭 이벤트 처리
+          const collector = reply.createMessageComponentCollector({
+            time: 60000,
+            filter: i => i.user.id === author.id
+          });
+
+          const pageOrder = ["general", "포인트", "아이템", "관리", "채널", "개발자"];
+          let currentPageIndex = page ? pageOrder.indexOf(page) : 0;
+          if (currentPageIndex === -1) currentPageIndex = 0;
+
+          collector.on("collect", async i => {
+            if (i.customId === "help_prev") {
+              currentPageIndex = (currentPageIndex - 1 + pageOrder.length) % pageOrder.length;
+            } else if (i.customId === "help_next") {
+              currentPageIndex = (currentPageIndex + 1) % pageOrder.length;
             }
-          )
-          .setFooter({ text: "🐾 길냥이봇 — by NobleNetick2", iconURL: client.user.displayAvatarURL() })
-          .setTimestamp();
+
+            const newPage = pageOrder[currentPageIndex];
+            const newEmbed = pages[newPage];
+            newEmbed
+              .setFooter({ 
+                text: `🐾 길냥이봇 v${botVersion} — 페이지 ${newPage}`, 
+                iconURL: client.user.displayAvatarURL() 
+              })
+              .setTimestamp();
+
+            await i.update({ embeds: [newEmbed], components: [row] });
+          });
+
+          collector.on("end", () => {
+            reply.edit({ components: [] }).catch(() => {});
+          });
+
+          return;
 
         return message.reply({ embeds: [embed] });
         break;
@@ -886,18 +1321,49 @@ function getDestroyChance(plus) {
 function getBotAsset(guildId) {
   const points = loadData(guildId, "points");
   const market = loadData(guildId, "market");
+  const botAsset = loadData(guildId, "botAsset") || { points: 1000000 };
 
-  let totalPoints = 0;
-  for (const id in points) totalPoints += points[id] || 0;
+  let circulatingPoints = 0;
+  for (const id in points) {
+    if (id !== BOT_ASSET_KEY) {
+      circulatingPoints += points[id]?.points || 0;
+    }
+  }
 
   let marketValue = 0;
-  for (const item of market) marketValue += item.price || 0;
+  for (const item of market) {
+    marketValue += item.price || 0;
+  }
+
+  // 거래 수수료 등으로 얻은 수익
+  const tradeFees = loadData(guildId, "tradeFees") || { total: 0 };
 
   return {
-    totalPoints,
+    botBalance: botAsset.points,
+    circulatingPoints,
     marketValue,
-    total: totalPoints + marketValue
+    tradeFees: tradeFees.total,
+    total: botAsset.points + marketValue
   };
+}
+
+function manageBotTransaction(guildId, amount, type = 'expense') {
+  const botAsset = loadData(guildId, "botAsset") || { points: 1000000 };
+  const tradeFees = loadData(guildId, "tradeFees") || { total: 0 };
+
+  if (type === 'income') {
+    botAsset.points += amount;
+    tradeFees.total += amount;
+  } else {
+    if (botAsset.points < amount) {
+      botAsset.points = 1000000; // 자산 부족 시 리필
+    }
+    botAsset.points -= amount;
+  }
+
+  saveData(guildId, "botAsset", botAsset);
+  saveData(guildId, "tradeFees", tradeFees);
+  return botAsset.points;
 }
 // === 유저 입장 / 자기소개 미작성 강퇴 ===
 client.on("guildMemberAdd", async member => {
