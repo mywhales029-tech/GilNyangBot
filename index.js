@@ -53,6 +53,116 @@ let pointsData = {}, attendance = {}, itemsData = {}, marketData = [];
 const BOT_ASSET_KEY = "bot_asset";
 const ITEM_GRADES = ["일반", "고급", "희귀", "영웅", "전설"];
 
+// 주식 시스템 상수
+const STOCK_UPDATE_INTERVAL = 15 * 60 * 1000; // 15분
+const MIN_STOCK_PRICE = 500;
+const MIN_CREATE_STOCK_POINTS = 1900000000;
+const STOCK_PRICE_CHANGE_RATES = [-0.15, -0.1, -0.05, -0.02, 0, 0.02, 0.05, 0.1, 0.15];
+
+// 주식 시스템 함수들
+function loadStockData() {
+  const stockData = loadData("global", "stocks") || {
+    stocks: {
+      "해피캐피탈": { price: 4300, initialPrice: 4300, totalShares: 1000000, available: true, owner: "system", lastUpdate: null, history: [] },
+      "냐옹전자": { price: 18700, initialPrice: 18700, totalShares: 1000000, available: true, owner: "system", lastUpdate: null, history: [] },
+      "냐옹그룹": { price: 98000, initialPrice: 98000, totalShares: 1000000, available: true, owner: "system", lastUpdate: null, history: [] },
+      "푸른하늘엔터테이먼트": { price: 970, initialPrice: 970, totalShares: 1000000, available: true, owner: "system", lastUpdate: null, history: [] }
+    },
+    userStocks: {},
+    marketOpen: true,
+    lastGlobalUpdate: null
+  };
+  return stockData;
+}
+
+function saveStockData(data) {
+  saveData("global", "stocks", data);
+}
+
+function updateStockPrices() {
+  const stockData = loadStockData();
+  const now = Date.now();
+
+  if (!stockData.marketOpen) return;
+  if (stockData.lastGlobalUpdate && now - stockData.lastGlobalUpdate < STOCK_UPDATE_INTERVAL) return;
+
+  Object.entries(stockData.stocks).forEach(([name, stock]) => {
+    if (!stock.available) return;
+    
+    // 가격 변동률 무작위 선택
+    const changeRate = STOCK_PRICE_CHANGE_RATES[Math.floor(Math.random() * STOCK_PRICE_CHANGE_RATES.length)];
+    const oldPrice = stock.price;
+    let newPrice = Math.round(oldPrice * (1 + changeRate));
+    
+    // 최소 주가 확인
+    if (newPrice < MIN_STOCK_PRICE) {
+      stock.available = false;
+      newPrice = 0;
+    }
+
+    stock.price = newPrice;
+    stock.history.push({
+      price: newPrice,
+      timestamp: now,
+      change: changeRate
+    });
+
+    // 히스토리는 최근 24시간만 유지
+    if (stock.history.length > 96) { // 15분 * 96 = 24시간
+      stock.history = stock.history.slice(-96);
+    }
+  });
+
+  stockData.lastGlobalUpdate = now;
+  saveStockData(stockData);
+}
+
+function formatStockPrice(price) {
+  return price.toLocaleString() + 'pt';
+}
+
+function formatShares(amount) {
+  // 최대 8자리 소수까지 표시하되 불필요한 0은 제거
+  if (amount === undefined || amount === null) return '0';
+  const fixed = Number(amount).toFixed(8);
+  // 불필요한 소수점 0 제거
+  const trimmed = fixed.replace(/(?:\.0+|(?:(\.[0-9]*?)0+))$/, '$1');
+  const parts = trimmed.split('.');
+  parts[0] = Number(parts[0]).toLocaleString();
+  return parts.join('.') ;
+}
+
+function getStockPriceChangeEmoji(changeRate) {
+  if (changeRate > 0) return '📈';
+  if (changeRate < 0) return '📉';
+  return '➡️';
+}
+
+function getStockStatusEmbed(stockData, stockName) {
+  const stock = stockData.stocks[stockName];
+  if (!stock) return null;
+
+  const history = stock.history;
+  const lastPrice = history.length > 1 ? history[history.length - 2].price : stock.initialPrice;
+  const priceChange = stock.price - lastPrice;
+  const changeRate = (priceChange / lastPrice * 100).toFixed(2);
+  const emoji = getStockPriceChangeEmoji(priceChange);
+
+  return new EmbedBuilder()
+    .setTitle(`${emoji} ${stockName} 주가 정보`)
+    .setColor(priceChange > 0 ? 0x00ff00 : priceChange < 0 ? 0xff0000 : 0x808080)
+    .addFields(
+      { name: '현재 주가', value: formatStockPrice(stock.price), inline: true },
+      { name: '전일 대비', value: `${priceChange >= 0 ? '+' : ''}${formatStockPrice(priceChange)} (${changeRate}%)`, inline: true },
+      { name: '거래 상태', value: stock.available ? '거래가능' : '거래중지', inline: true },
+      { name: '시가총액', value: formatStockPrice(stock.price * stock.totalShares), inline: true },
+      { name: '발행주식수', value: stock.totalShares.toLocaleString() + '주', inline: true },
+      { name: '소유자', value: stock.owner === 'system' ? '시스템' : `<@${stock.owner}>`, inline: true }
+    )
+    .setFooter({ text: '매 15분마다 가격이 갱신됩니다.' })
+    .setTimestamp();
+}
+
 // 감시 시스템 데이터
 let surveillanceData = { servers: {}, userPatterns: {} };
 const PATTERN_UPDATE_INTERVAL = 60 * 60 * 1000; // 1시간마다 패턴 업데이트
@@ -1029,6 +1139,264 @@ client.on("messageCreate", async message => {
           }
         }
         // === 봇 자산 조회 ===
+        case "주식": {
+          if (args.length < 1) {
+            return message.reply("⚠️ 사용법: &주식 [시세/매수/매도/보유/생성] [종목명] [수량]");
+          }
+
+          const subCommand = args[0];
+          const stockData = loadStockData();
+          updateStockPrices(); // 가격 갱신 체크
+
+          switch (subCommand) {
+            case "시세": {
+              const stockName = args[1];
+              if (!stockName) {
+                // 전체 종목 시세
+                const embed = new EmbedBuilder()
+                  .setTitle("📊 주식 시세 현황")
+                  .setColor(0x0099ff)
+                  .setDescription("현재 거래 가능한 모든 주식의 시세입니다.");
+
+                Object.entries(stockData.stocks)
+                  .filter(([_, stock]) => stock.available)
+                  .forEach(([name, stock]) => {
+                    const history = stock.history;
+                    const lastPrice = history.length > 1 ? history[history.length - 2].price : stock.initialPrice;
+                    const priceChange = stock.price - lastPrice;
+                    const changeRate = (priceChange / lastPrice * 100).toFixed(2);
+                    const emoji = getStockPriceChangeEmoji(priceChange);
+
+                    embed.addFields({
+                      name: `${emoji} ${name}`,
+                      value: `${formatStockPrice(stock.price)} (${changeRate}%)`,
+                      inline: true
+                    });
+                  });
+
+                return message.reply({ embeds: [embed] });
+              }
+
+              // 특정 종목 상세 시세
+              const stockEmbed = getStockStatusEmbed(stockData, stockName);
+              if (!stockEmbed) {
+                return message.reply("❌ 존재하지 않는 주식입니다.");
+              }
+              return message.reply({ embeds: [stockEmbed] });
+            }
+
+            case "매수": {
+              const stockName = args[1];
+              const raw = args[2];
+
+              if (!stockName || !raw) {
+                return message.reply("⚠️ 사용법: &주식 매수 [종목명] [수량/포인트]\n예시1) &주식 매수 삼성전자 1.5\n예시2) &주식 매수 삼성전자 1000p");
+              }
+
+              const stock = stockData.stocks[stockName];
+              if (!stock || !stock.available) {
+                return message.reply("❌ 거래할 수 없는 주식입니다.");
+              }
+
+              // 포인트 단위로 구매하는지, 수량 단위로 구매하는지 판별
+              const pointsPattern = /(?:p|포인트)$/i;
+              let amount = 0;
+              let totalCost = 0;
+              let boughtByPoints = false;
+
+              if (pointsPattern.test(raw)) {
+                // 예: 1500p 또는 1500포인트
+                const points = parseFloat(raw.replace(/[^0-9.]/g, ""));
+                if (isNaN(points) || points <= 0) {
+                  return message.reply("⚠️ 올바른 포인트 값을 입력해주세요. 예: 1000p");
+                }
+                boughtByPoints = true;
+                totalCost = points;
+                amount = totalCost / stock.price;
+              } else {
+                // 수량으로 입력 (소수 허용)
+                amount = parseFloat(raw);
+                if (isNaN(amount) || amount <= 0) {
+                  return message.reply("⚠️ 올바른 수량을 입력해주세요. 예: 1.5");
+                }
+                totalCost = stock.price * amount;
+              }
+
+              // 최소 구매 금액 체크
+              if (totalCost < 1) {
+                return message.reply("⚠️ 최소 1포인트 이상 구매해야 합니다.");
+              }
+
+              const userPoints = pointsData[author.id]?.points || 0;
+              if (userPoints < totalCost) {
+                return message.reply("⚠️ 포인트가 부족합니다.");
+              }
+
+              // 사용자 데이터 보장
+              if (!pointsData[author.id]) pointsData[author.id] = { username: author.username, points: 0 };
+              if (!stockData.userStocks[author.id]) stockData.userStocks[author.id] = {};
+              if (!stockData.userStocks[author.id][stockName]) stockData.userStocks[author.id][stockName] = 0;
+
+              // 소수점 처리: 최대 8자리까지만 보관
+              amount = Number(amount.toFixed(8));
+              // 포인트 차감은 사용자가 지정한 총액을 그대로 사용(포인트 구매의 경우)
+              totalCost = boughtByPoints ? Number(totalCost.toFixed(2)) : Number((stock.price * amount).toFixed(2));
+
+              // 구매 반영
+              stockData.userStocks[author.id][stockName] += amount;
+              pointsData[author.id].points -= totalCost;
+
+              saveStockData(stockData);
+              saveData(guildId, "points", pointsData);
+
+              const embed = new EmbedBuilder()
+                .setTitle("✅ 주식 매수 완료")
+                .setColor(0x00ff00)
+                .addFields(
+                  { name: "종목", value: stockName, inline: true },
+                  { name: "수량", value: `${formatShares(amount)}주`, inline: true },
+                  { name: "총 비용", value: formatStockPrice(totalCost), inline: true },
+                  { name: "주당 가격", value: formatStockPrice(stock.price), inline: true },
+                  { name: "남은 포인트", value: formatStockPrice(pointsData[author.id].points), inline: true }
+                );
+
+              return message.reply({ embeds: [embed] });
+            }
+
+            case "매도": {
+              const stockName = args[1];
+              const amount = parseFloat(args[2]);
+
+              if (!stockName || isNaN(amount) || amount <= 0) {
+                return message.reply("⚠️ 사용법: &주식 매도 [종목명] [수량] (소수점 거래 가능)");
+              }
+
+              const stock = stockData.stocks[stockName];
+              if (!stock || !stock.available) {
+                return message.reply("❌ 거래할 수 없는 주식입니다.");
+              }
+
+              if (!stockData.userStocks[author.id]?.[stockName] || 
+                  stockData.userStocks[author.id][stockName] < amount) {
+                return message.reply("❌ 보유한 주식이 부족합니다.");
+              }
+
+              // 판매 처리
+              const totalProfit = stock.price * amount;
+              stockData.userStocks[author.id][stockName] -= amount;
+              
+              if (stockData.userStocks[author.id][stockName] === 0) {
+                delete stockData.userStocks[author.id][stockName];
+              }
+              
+              if (!pointsData[author.id]) {
+                pointsData[author.id] = { username: author.username, points: 0 };
+              }
+              pointsData[author.id].points += totalProfit;
+
+              saveStockData(stockData);
+              saveData(guildId, "points", pointsData);
+
+              const embed = new EmbedBuilder()
+                .setTitle("✅ 주식 매도 완료")
+                .setColor(0x00ff00)
+                .addFields(
+                  { name: "종목", value: stockName, inline: true },
+                  { name: "수량", value: amount.toLocaleString() + "주", inline: true },
+                  { name: "총 수익", value: formatStockPrice(totalProfit), inline: true },
+                  { name: "주당 가격", value: formatStockPrice(stock.price), inline: true },
+                  { name: "현재 포인트", value: formatStockPrice(pointsData[author.id].points), inline: true }
+                );
+
+              return message.reply({ embeds: [embed] });
+            }
+
+            case "보유": {
+              if (!stockData.userStocks[author.id] || Object.keys(stockData.userStocks[author.id]).length === 0) {
+                return message.reply("📈 보유중인 주식이 없습니다.");
+              }
+
+              let totalValue = 0;
+              const embed = new EmbedBuilder()
+                .setTitle(`🏦 ${author.username}님의 주식 보유 현황`)
+                .setColor(0x0099ff);
+
+              Object.entries(stockData.userStocks[author.id]).forEach(([stockName, amount]) => {
+                const stock = stockData.stocks[stockName];
+                if (stock && amount > 0) {
+                  const value = stock.price * amount;
+                  totalValue += value;
+                  embed.addFields({
+                    name: stockName,
+                    value: `${amount.toLocaleString()}주\n` +
+                          `현재가: ${formatStockPrice(stock.price)}\n` +
+                          `평가액: ${formatStockPrice(value)}`,
+                    inline: true
+                  });
+                }
+              });
+
+              embed.addFields({
+                name: "총 평가액",
+                value: formatStockPrice(totalValue),
+                inline: false
+              });
+
+              return message.reply({ embeds: [embed] });
+            }
+
+            case "생성": {
+              const stockName = args[1];
+              const initialPrice = parseInt(args[2]);
+
+              if (!stockName || isNaN(initialPrice) || initialPrice < MIN_STOCK_PRICE) {
+                return message.reply(`⚠️ 사용법: &주식 생성 [종목명] [초기가격(최소 ${MIN_STOCK_PRICE}pt)]`);
+              }
+
+              if (stockData.stocks[stockName]) {
+                return message.reply("❌ 이미 존재하는 주식입니다.");
+              }
+
+              if ((pointsData[author.id]?.points || 0) < MIN_CREATE_STOCK_POINTS) {
+                return message.reply(`⚠️ 주식 생성을 위해서는 최소 ${formatStockPrice(MIN_CREATE_STOCK_POINTS)}가 필요합니다.`);
+              }
+
+              // 주식 생성
+              stockData.stocks[stockName] = {
+                price: initialPrice,
+                initialPrice: initialPrice,
+                totalShares: 1000000,
+                available: true,
+                owner: author.id,
+                lastUpdate: Date.now(),
+                history: []
+              };
+
+              // 생성 비용 차감
+              pointsData[author.id].points -= MIN_CREATE_STOCK_POINTS;
+
+              saveStockData(stockData);
+              saveData(guildId, "points", pointsData);
+
+              const embed = new EmbedBuilder()
+                .setTitle("✅ 새로운 주식 상장")
+                .setColor(0x00ff00)
+                .addFields(
+                  { name: "종목명", value: stockName, inline: true },
+                  { name: "초기 가격", value: formatStockPrice(initialPrice), inline: true },
+                  { name: "총 발행주식", value: "1,000,000주", inline: true },
+                  { name: "소유자", value: author.username, inline: true },
+                  { name: "생성 비용", value: formatStockPrice(MIN_CREATE_STOCK_POINTS), inline: true }
+                );
+
+              return message.reply({ embeds: [embed] });
+            }
+
+            default:
+              return message.reply("⚠️ 올바른 주식 명령어를 입력해주세요. (시세/매수/매도/보유/생성)");
+          }
+        }
+
         case "봇자산": {
           const asset = getBotAsset(guildId);
           const embed = new EmbedBuilder()
