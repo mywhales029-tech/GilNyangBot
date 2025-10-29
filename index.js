@@ -249,6 +249,109 @@ client.on("messageCreate", async message => {
           saveData(guildId,"points",pointsData);
           return message.reply(`✅ <@${targetId}>님 포인트 ${action} 완료`);
       }
+      case "데이터삭제": {
+        // 개발자 권한 체크
+        if(!DEV_IDS.includes(author.id)) return message.reply("⛔ 개발자 권한이 필요합니다.");
+
+        // 확인 버튼 생성
+        const row = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId("data_delete_confirm")
+              .setLabel("삭제 확인")
+              .setStyle(ButtonStyle.Danger),
+            new ButtonBuilder()
+              .setCustomId("data_delete_cancel")
+              .setLabel("취소")
+              .setStyle(ButtonStyle.Secondary)
+          );
+
+        // 경고 메시지 전송
+        const warningMsg = await message.reply({
+          content: "⚠️ **위험!** 서버의 모든 데이터가 삭제됩니다!\n" +
+                   "🔸포인트\n🔸출석\n🔸아이템\n🔸시장\n" +
+                   "정말로 진행하시겠습니까?",
+          components: [row]
+        });
+
+        // 버튼 클릭 이벤트 처리
+        const collector = warningMsg.createMessageComponentCollector({
+          time: 15000,
+          max: 1,
+          filter: i => i.user.id === author.id
+        });
+
+        collector.on("collect", async i => {
+          if(i.customId === "data_delete_cancel") {
+            await i.update({
+              content: "❌ 데이터 삭제가 취소되었습니다.",
+              components: []
+            });
+            return;
+          }
+
+          if(i.customId === "data_delete_confirm") {
+            await i.update({
+              content: "💫 데이터를 삭제하는 중...",
+              components: []
+            });
+
+            try {
+              // 데이터 파일들 삭제
+              const dataFiles = ["points", "attendance", "items", "market"];
+              for(const file of dataFiles) {
+                const filePath = path.join(__dirname, "data", guildId, `${file}.json`);
+                if(fs.existsSync(filePath)) {
+                  fs.unlinkSync(filePath);
+                }
+              }
+
+              // 메모리상의 데이터도 초기화
+              pointsData = {};
+              attendance = {};
+              itemsData = {};
+              marketData = [];
+
+              // 데이터 디렉토리 재생성
+              ensureServerData(guildId);
+
+              // 빈 데이터 파일들 생성
+              for(const file of dataFiles) {
+                saveData(guildId, file, file === "market" ? [] : {});
+              }
+
+              await warningMsg.edit({
+                content: "✅ 모든 데이터가 성공적으로 초기화되었습니다.\n" +
+                         `📅 초기화 시각: ${new Date().toLocaleString("ko-KR")}\n` +
+                         `👤 실행자: ${author.username}`,
+                components: []
+              });
+
+              // 개발 로그 채널에 기록
+              await devLogError(guild, author, "데이터 초기화 완료", "DATA_RESET");
+
+            } catch(error) {
+              console.error("데이터 삭제 중 오류:", error);
+              await warningMsg.edit({
+                content: "⚠️ 데이터 삭제 중 오류가 발생했습니다.",
+                components: []
+              });
+              await devLogError(guild, author, error, "DATA_RESET_ERR");
+            }
+          }
+        });
+
+        collector.on("end", async (collected, reason) => {
+          if(reason === "time") {
+            await warningMsg.edit({
+              content: "⏳ 시간이 초과되어 작업이 취소되었습니다.",
+              components: []
+            });
+          }
+        });
+
+        return;
+      }
       // === 출석 ===
         case "출석":{
           const userId=author.id;
