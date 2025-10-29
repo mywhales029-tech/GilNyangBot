@@ -18,7 +18,15 @@ import { dirname } from "path";
 dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const currentChannel = message.channel;
+
+// 환경변수 검증
+const requiredEnvVars = ['BOT_TOKEN', 'INTRO_CHANNEL_ID', 'DEV_LOG_CHANNEL_ID', 'WELCOME_CHANNEL_ID', 'NOTICE_CHANNEL_ID'];
+const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+if (missingEnvVars.length > 0) {
+    console.error('필수 환경 변수가 설정되지 않았습니다:', missingEnvVars.join(', '));
+    process.exit(1);
+}
 
 // 환경변수
 const TOKEN = process.env.BOT_TOKEN;
@@ -42,6 +50,8 @@ let banmalMode = false, banmalReplies = [], lastBanmal, jondaetReplies = [], las
 let botVersion = "v3.2.1";
 let DEV_IDS = ["937280891967918120"];
 let pointsData = {}, attendance = {}, itemsData = {}, marketData = [];
+const BOT_ASSET_KEY = "bot_asset";
+const ITEM_GRADES = ["일반", "고급", "희귀", "영웅", "전설"];
 
 client.commands = new Collection();
 
@@ -63,8 +73,17 @@ function loadData(guildId, file) {
 
 function saveData(guildId, file, data) {
   const filePath = path.join(__dirname, "data", guildId, `${file}.json`);
-  ensureServerData(guildId);
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
+  try {
+    ensureServerData(guildId);
+    // 임시 파일에 먼저 저장
+    const tempPath = `${filePath}.tmp`;
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf8");
+    // 성공적으로 저장되면 실제 파일로 이동
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    console.error(`데이터 저장 실패 (${guildId}/${file}):`, error);
+    devLogError(null, null, error, "DATA_SAVE_ERR");
+  }
 }
 
 banmalMode, banmalReplies, lastBanmal, jondaetReplies, lastJondaet
@@ -101,7 +120,7 @@ async function devLogError(guild, user, error, code) {
 }
 
 // === 봇 시작 ===
-client.once("clientReady", () => {
+client.once("ready", () => {
   console.log(`✅ ${client.user.tag} 로그인 완료`);
   const statuses = [
     () => `🐾 길냥이봇 | &도움말`,
@@ -133,7 +152,7 @@ client.on("messageCreate", async message => {
       const targetChannelId = config.channels?.[category];
       if (!targetChannelId) continue;
 
-      if (currentChannel.id === targetChannelId) {
+      if (channel.id === targetChannelId) {
         if (category === "명령어" && !content.startsWith("&")) {
           // 명령어 채널: 일반 메시지 삭제
           await message.delete().catch(() => {});
@@ -238,7 +257,7 @@ client.on("messageCreate", async message => {
           if(last && now-last<24*60*60*1000) return message.reply("⏰ 이미 오늘 출석했습니다. 24시간 후 다시 출석 가능!");
           attendance[userId]={ username:author.username, lastCheck: now.toISOString() };
           saveData(guildId,"attendance",attendance);
-          pointsData[userId]={ username:author.username, points:(pointsData[userId]?.points||0)+3500 };
+          pointsData[userId]={ username:author.username, points:(pointsData[userId]?.points||0)+2000 };
           saveData(guildId,"points",pointsData);
           return message.reply("✅ 출석 완료! 3500 포인트 획득");
         }
@@ -255,6 +274,10 @@ client.on("messageCreate", async message => {
         }
         // === 시공의폭풍 (채널 전체 삭제) ===
         case "시공의폭풍": {
+          if (!message.member.permissions.has("ManageMessages")) {
+            return message.reply("⚠️ 메시지 관리 권한이 필요합니다.");
+          }
+
           // 경고 + 버튼
           const row = new ActionRowBuilder()
             .addComponents(
@@ -263,13 +286,17 @@ client.on("messageCreate", async message => {
             );
 
           const warningMsg = await message.reply({ 
-            content: "⚠️ 주의! 이 채널의 모든 메시지가 삭제됩니다. 계속 진행하시겠습니까?", 
+            content: "⚠️ 주의! 이 채널의 최근 메시지들이 삭제됩니다. 계속 진행하시겠습니까?", 
             components: [row] 
           });
 
           // 버튼 클릭 이벤트 처리 (명령어 실행자만 허용)
           if (warningMsg.collector) warningMsg.collector.stop();
-          const collector = warningMsg.createMessageComponentCollector({ time: 15000, max: 1, filter: i => i.user.id === author.id });
+          const collector = warningMsg.createMessageComponentCollector({ 
+            time: 15000, 
+            max: 1, 
+            filter: i => i.user.id === author.id 
+          });
 
           collector.on("collect", async i => {
             if(i.customId === "storm_no") {
@@ -277,26 +304,63 @@ client.on("messageCreate", async message => {
               return;
             }
             if(i.customId === "storm_yes") {
-              await i.deferUpdate();
-              // 메시지 삭제 루프 (최대 100씩)
-              try{
-                let fetched;
-                do {
-                  fetched = await message.channel.messages.fetch({ limit: 100 });
-                  if(fetched.size > 0){
-                    // bulkDelete는 14일 지난 메시지는 삭제 불가; true로 partial 허용
-                    const deleted = await message.channel.bulkDelete(fetched, true).catch(()=>null);
-                    // 알림 (선택적)
-                    if(deleted && deleted.size){
-                      await message.channel.send(`🕶 최근 ${deleted.size}개의 메시지를 삭제했습니다.`).catch(()=>{});
-                    }
+              await i.update({ content: "🌀 시공의 폭풍이 시작됩니다...", components: [] });
+              
+              try {
+                // 명령어 메시지 먼저 삭제
+                await message.delete().catch(() => {});
+                
+                let totalDeleted = 0;
+                let statusMessage = null;
+                
+                // 최대 1000개까지만 삭제 (무한루프 방지)
+                for(let iteration = 0; iteration < 10 && totalDeleted < 1000; iteration++) {
+                  const fetched = await message.channel.messages.fetch({ limit: 100 });
+                  if(fetched.size === 0) break;
+                  
+                  // 상태 메시지 업데이트 또는 생성
+                  const status = `🌀 삭제 진행 중... (${totalDeleted}개 완료)`;
+                  if(statusMessage) {
+                    await statusMessage.edit(status).catch(() => {});
+                  } else {
+                    statusMessage = await message.channel.send(status);
                   }
-                } while(fetched && fetched.size >= 2); // interaction 메시지가 남지 않도록 루프 제한
-              }catch(e){
-                // 에러는 로그로 보냄
+                  
+                  // bulkDelete 실행
+                  const deleted = await message.channel.bulkDelete(fetched, true).catch(() => null);
+                  if(!deleted || deleted.size === 0) break;
+                  
+                  totalDeleted += deleted.size;
+                  
+                  // 잠시 대기하여 API 속도 제한 방지
+                  await new Promise(resolve => setTimeout(resolve, 1500));
+                }
+                
+                // 상태 메시지 삭제
+                if(statusMessage) {
+                  await statusMessage.delete().catch(() => {});
+                }
+                
+                // 최종 결과 메시지
+                await message.channel.send(
+                  `💫 시공의 폭풍이 종료되었습니다.\n` +
+                  `📊 총 ${totalDeleted}개의 메시지가 삭제되었습니다.\n` +
+                  `👤 실행자: ${author.username}`
+                );
+                
+              } catch(e) {
                 await devLogError(guild, author, e, "STORM_ERR");
+                await message.channel.send("⚠️ 시공의 폭풍 실행 중 오류가 발생했습니다.");
               }
-              await message.channel.send(`💥 @${author.username}님이 시공의 폭풍을 사용했습니다!`);
+            }
+          });
+
+          collector.on("end", async (collected, reason) => {
+            if(reason === "time") {
+              await warningMsg.edit({
+                content: "⏳ 시간이 초과되어 명령이 취소되었습니다.",
+                components: []
+              }).catch(() => {});
             }
           });
 
