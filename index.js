@@ -125,17 +125,22 @@ function updateStockPrices() {
 }
 
 function formatStockPrice(price) {
-  return price.toLocaleString() + 'pt';
+  // 안전하게 숫자로 변환 후 포맷 (undefined/NaN 방지)
+  const n = Number(price);
+  const safe = Number.isFinite(n) ? n : 0;
+  return safe.toLocaleString("ko-KR") + 'pt';
 }
 
 function formatShares(amount) {
   // 최대 8자리 소수까지 표시하되 불필요한 0은 제거
   if (amount === undefined || amount === null) return '0';
-  const fixed = Number(amount).toFixed(8);
+  const num = Number(amount);
+  if (!Number.isFinite(num)) return '0';
+  const fixed = num.toFixed(8);
   // 불필요한 소수점 0 제거
   const trimmed = fixed.replace(/(?:\.0+|(?:(\.[0-9]*?)0+))$/, '$1');
   const parts = trimmed.split('.');
-  parts[0] = Number(parts[0]).toLocaleString();
+  parts[0] = Number(parts[0]).toLocaleString("ko-KR");
   return parts.join('.') ;
 }
 
@@ -162,8 +167,8 @@ function getStockStatusEmbed(stockData, stockName) {
       { name: '현재 주가', value: formatStockPrice(stock.price), inline: true },
       { name: '전일 대비', value: `${priceChange >= 0 ? '+' : ''}${formatStockPrice(priceChange)} (${changeRate}%)`, inline: true },
       { name: '거래 상태', value: stock.available ? '거래가능' : '거래중지', inline: true },
-      { name: '시가총액', value: formatStockPrice(stock.price * stock.totalShares), inline: true },
-      { name: '발행주식수', value: stock.totalShares.toLocaleString() + '주', inline: true },
+  { name: '시가총액', value: formatStockPrice((Number(stock.price) || 0) * (Number(stock.totalShares) || 0)), inline: true },
+  { name: '발행주식수', value: (Number(stock.totalShares) || 0).toLocaleString("ko-KR") + '주', inline: true },
       { name: '소유자', value: stock.owner === 'system' ? '시스템' : `<@${stock.owner}>`, inline: true }
     )
     .setFooter({ text: '매 15분마다 가격이 갱신됩니다.' })
@@ -382,6 +387,15 @@ client.on("messageCreate", async message => {
             links: 0
           }
         };
+      } else {
+        // 보장: stats 필드가 숫자로 존재하도록 보정
+        surveillanceData.userPatterns[guildId][userId].stats = surveillanceData.userPatterns[guildId][userId].stats || {};
+        const s = surveillanceData.userPatterns[guildId][userId].stats;
+        s.messages = Number(s.messages || 0) || 0;
+        s.stickers = Number(s.stickers || 0) || 0;
+        s.emojis = Number(s.emojis || 0) || 0;
+        s.gifs = Number(s.gifs || 0) || 0;
+        s.links = Number(s.links || 0) || 0;
       }
 
       // 메시지 저장 및 통계 업데이트
@@ -467,6 +481,8 @@ client.on("messageCreate", async message => {
       if (message.author.bot) return;
 
       const joinQueue = loadData(guildId, "joinQueue");
+  // loadData may return {} or null-like; ensure it's an object we can mutate
+  const safeJoinQueue = (joinQueue && typeof joinQueue === 'object') ? joinQueue : {};
       const defaultRoleData = loadData(guildId, "defaultRole");
 
       // 자기소개 유효성 검사
@@ -521,16 +537,16 @@ client.on("messageCreate", async message => {
       }
 
       // joinQueue에 없어도 자기소개하면 역할 지급 (복구 기능)
-      if (!joinQueue[author.id]) {
-        joinQueue[author.id] = {
+      if (!safeJoinQueue[author.id]) {
+        safeJoinQueue[author.id] = {
           joinTime: new Date().toISOString(),
           introDone: false
         };
       }
 
       // 자기소개 완료 처리
-      joinQueue[author.id].introDone = true;
-      saveData(guildId, "joinQueue", joinQueue);
+      safeJoinQueue[author.id].introDone = true;
+      saveData(guildId, "joinQueue", safeJoinQueue);
 
       // 역할 지급
       try {
@@ -893,7 +909,7 @@ client.on("messageCreate", async message => {
             { name: "수집된 이모지(추정)", value: totalEmojis.toString(), inline: true },
             { name: "수집된 GIF", value: totalGifs.toString(), inline: true },
             { name: "수집된 링크", value: totalLinks.toString(), inline: true },
-            { name: "활성화 일시", value: new Date(surveillanceData.servers[message.guild.id].enabledAt).toLocaleString("ko-KR"), inline: true }
+            { name: "활성화 일시", value: surveillanceData.servers[message.guild.id]?.enabledAt ? new Date(surveillanceData.servers[message.guild.id].enabledAt).toLocaleString("ko-KR") : "설정 없음", inline: true }
           );
 
         // 상위 5명의 활동적인 사용자 표시
@@ -925,7 +941,7 @@ client.on("messageCreate", async message => {
 
         // 관리자 목록 수집
         const admins = guild.members.cache
-          .filter(m => m.permissions.has("Administrator"))
+          .filter(m => m.permissions && m.permissions.has && m.permissions.has("Administrator"))
           .map(m => `${m.user.tag}`)
           .slice(0, 25);
 
@@ -1493,13 +1509,14 @@ client.on("messageCreate", async message => {
                 return message.reply("⚠️ 최소 1포인트 이상 구매해야 합니다.");
               }
 
-              const userPoints = pointsData[author.id]?.points || 0;
+              // 사용자 데이터 보장 (검사 이전에 보장)
+              if (!pointsData[author.id]) pointsData[author.id] = { username: author.username, points: 0 };
+              if (!stockData.userStocks[author.id]) stockData.userStocks[author.id] = {};
+
+              const userPoints = Number(pointsData[author.id].points || 0) || 0;
               if (userPoints < totalCost) {
                 return message.reply("⚠️ 포인트가 부족합니다.");
               }
-
-              // 사용자 데이터 보장
-              if (!pointsData[author.id]) pointsData[author.id] = { username: author.username, points: 0 };
               if (!stockData.userStocks[author.id]) stockData.userStocks[author.id] = {};
               if (!stockData.userStocks[author.id][stockName]) stockData.userStocks[author.id][stockName] = 0;
 
@@ -1568,7 +1585,7 @@ client.on("messageCreate", async message => {
                 .setColor(0x00ff00)
                 .addFields(
                   { name: "종목", value: stockName, inline: true },
-                  { name: "수량", value: amount.toLocaleString() + "주", inline: true },
+                    { name: "수량", value: formatShares(amount) + "주", inline: true },
                   { name: "총 수익", value: formatStockPrice(totalProfit), inline: true },
                   { name: "주당 가격", value: formatStockPrice(stock.price), inline: true },
                   { name: "현재 포인트", value: formatStockPrice(pointsData[author.id].points), inline: true }
@@ -1594,7 +1611,7 @@ client.on("messageCreate", async message => {
                   totalValue += value;
                   embed.addFields({
                     name: stockName,
-                    value: `${amount.toLocaleString()}주\n` +
+                    value: `${formatShares(amount)}주\n` +
                           `현재가: ${formatStockPrice(stock.price)}\n` +
                           `평가액: ${formatStockPrice(value)}`,
                     inline: true
@@ -1666,15 +1683,15 @@ client.on("messageCreate", async message => {
 
         case "봇자산": {
           const asset = getBotAsset(guildId);
-          const embed = new EmbedBuilder()
+              const embed = new EmbedBuilder()
             .setTitle("💰 길냥이봇 자산 현황")
             .setColor(0xffd700)
             .addFields(
-              { name: "보유 자산", value: `${asset.botBalance.toLocaleString()}pt`, inline: true },
-              { name: "시장 가치", value: `${asset.marketValue.toLocaleString()}pt`, inline: true },
-              { name: "총 자산", value: `${asset.total.toLocaleString()}pt`, inline: true },
-              { name: "유통 포인트", value: `${asset.circulatingPoints.toLocaleString()}pt`, inline: true },
-              { name: "거래 수수료 수입", value: `${asset.tradeFees.toLocaleString()}pt`, inline: true }
+              { name: "보유 자산", value: `${(Number(asset.botBalance)||0).toLocaleString("ko-KR")}pt`, inline: true },
+              { name: "시장 가치", value: `${(Number(asset.marketValue)||0).toLocaleString("ko-KR")}pt`, inline: true },
+              { name: "총 자산", value: `${(Number(asset.total)||0).toLocaleString("ko-KR")}pt`, inline: true },
+              { name: "유통 포인트", value: `${(Number(asset.circulatingPoints)||0).toLocaleString("ko-KR")}pt`, inline: true },
+              { name: "거래 수수료 수입", value: `${(Number(asset.tradeFees)||0).toLocaleString("ko-KR")}pt`, inline: true }
             )
             .setFooter({ text: "포인트 발행량과 시장 가치의 합계" })
             .setTimestamp();
@@ -1982,30 +1999,30 @@ function getBotAsset(guildId) {
   const botAssetRaw = loadData(guildId, "botAsset") || {};
 
   // 봇 자산, 기본값 보장
-  const botBalance = Number(botAssetRaw.points ?? 1000000);
+  const botBalance = Number(botAssetRaw.points ?? 1000000) || 0;
 
   let circulatingPoints = 0;
   for (const id in points) {
     if (id !== BOT_ASSET_KEY) {
-      circulatingPoints += Number(points[id]?.points || 0);
+      circulatingPoints += Number(points[id]?.points || 0) || 0;
     }
   }
 
   let marketValue = 0;
   for (const item of market) {
-    marketValue += Number(item?.price || 0);
+    marketValue += Number(item?.price || 0) || 0;
   }
 
   // 거래 수수료 등으로 얻은 수익
   const tradeFeesRaw = loadData(guildId, "tradeFees") || {};
-  const tradeFeesTotal = Number(tradeFeesRaw.total ?? 0);
+  const tradeFeesTotal = Number(tradeFeesRaw.total ?? 0) || 0;
 
   return {
     botBalance,
     circulatingPoints,
     marketValue,
     tradeFees: tradeFeesTotal,
-    total: botBalance + marketValue
+    total: (Number(botBalance) || 0) + (Number(marketValue) || 0)
   };
 }
 
@@ -2049,8 +2066,9 @@ setInterval(async () => {
   for (const guild of client.guilds.cache.values()) {
     const guildId = guild.id;
     ensureServerData(guildId);
-    const config = loadData(guildId, "config");
-    const joinQueue = loadData(guildId, "joinQueue");
+      const config = loadData(guildId, "config");
+      const joinQueueRaw = loadData(guildId, "joinQueue");
+      const joinQueue = (joinQueueRaw && typeof joinQueueRaw === 'object') ? joinQueueRaw : {};
     let updated = false;
     const now = new Date();
 
