@@ -876,11 +876,11 @@ client.on("messageCreate", async message => {
 
         const userPatterns = Object.entries(guildPattern);
   const totalUsers = userPatterns.length;
-  const totalMessages = userPatterns.reduce((sum, [_, data]) => sum + (data.messages?.length||0), 0);
-  const totalStickers = userPatterns.reduce((sum, [_, data]) => sum + (data.stats?.stickers||0), 0);
-  const totalEmojis = userPatterns.reduce((sum, [_, data]) => sum + (data.stats?.emojis||0), 0);
-  const totalGifs = userPatterns.reduce((sum, [_, data]) => sum + (data.stats?.gifs||0), 0);
-  const totalLinks = userPatterns.reduce((sum, [_, data]) => sum + (data.stats?.links||0), 0);
+  const totalMessages = userPatterns.reduce((sum, [_, data]) => sum + (data?.messages?.length || 0), 0);
+  const totalStickers = userPatterns.reduce((sum, [_, data]) => sum + (data?.stats?.stickers || 0), 0);
+  const totalEmojis = userPatterns.reduce((sum, [_, data]) => sum + (data?.stats?.emojis || 0), 0);
+  const totalGifs = userPatterns.reduce((sum, [_, data]) => sum + (data?.stats?.gifs || 0), 0);
+  const totalLinks = userPatterns.reduce((sum, [_, data]) => sum + (data?.stats?.links || 0), 0);
 
         const embed = new EmbedBuilder()
           .setTitle("📊 서버 감시 현황")
@@ -1976,31 +1976,36 @@ function getDestroyChance(plus) {
 
 // 봇 자산(포인트 합계 등) 계산 함수
 function getBotAsset(guildId) {
-  const points = loadData(guildId, "points");
-  const market = loadData(guildId, "market");
-  const botAsset = loadData(guildId, "botAsset") || { points: 1000000 };
+  const points = loadData(guildId, "points") || {};
+  const marketRaw = loadData(guildId, "market");
+  const market = Array.isArray(marketRaw) ? marketRaw : [];
+  const botAssetRaw = loadData(guildId, "botAsset") || {};
+
+  // 봇 자산, 기본값 보장
+  const botBalance = Number(botAssetRaw.points ?? 1000000);
 
   let circulatingPoints = 0;
   for (const id in points) {
     if (id !== BOT_ASSET_KEY) {
-      circulatingPoints += points[id]?.points || 0;
+      circulatingPoints += Number(points[id]?.points || 0);
     }
   }
 
   let marketValue = 0;
   for (const item of market) {
-    marketValue += item.price || 0;
+    marketValue += Number(item?.price || 0);
   }
 
   // 거래 수수료 등으로 얻은 수익
-  const tradeFees = loadData(guildId, "tradeFees") || { total: 0 };
+  const tradeFeesRaw = loadData(guildId, "tradeFees") || {};
+  const tradeFeesTotal = Number(tradeFeesRaw.total ?? 0);
 
   return {
-    botBalance: botAsset.points,
+    botBalance,
     circulatingPoints,
     marketValue,
-    tradeFees: tradeFees.total,
-    total: botAsset.points + marketValue
+    tradeFees: tradeFeesTotal,
+    total: botBalance + marketValue
   };
 }
 
