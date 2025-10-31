@@ -373,17 +373,53 @@ client.on("messageCreate", async message => {
       if (!surveillanceData.userPatterns[guildId][userId]) {
         surveillanceData.userPatterns[guildId][userId] = {
           messages: [],
-          pattern: null
+          pattern: null,
+          stats: {
+            messages: 0,
+            stickers: 0,
+            emojis: 0,
+            gifs: 0,
+            links: 0
+          }
         };
       }
 
-      // 메시지 저장
+      // 메시지 저장 및 통계 업데이트
       const userPattern = surveillanceData.userPatterns[guildId][userId];
       userPattern.messages.push({
         content: content,
         timestamp: message.createdTimestamp,
         channelId: channel.id
       });
+      userPattern.stats.messages += 1;
+
+      // 이모지(Unicode) 수 카운트 (간단 추정)
+      const emojiRegex = /\p{Extended_Pictographic}/gu;
+      const emojiMatches = content.match(emojiRegex);
+      if (emojiMatches) userPattern.stats.emojis += emojiMatches.length;
+
+      // 링크 감지
+      const urlRegex = /https?:\/\/[\w\-._~:/?#[\]@!$&'()*+,;=%]+/gi;
+      const urlMatches = content.match(urlRegex);
+      if (urlMatches) userPattern.stats.links += urlMatches.length;
+
+      // 첨부된 파일 검사 (스티커/이미지/GIF 구분)
+      if (message.stickers && message.stickers.size > 0) {
+        userPattern.stats.stickers += message.stickers.size;
+      }
+      if (message.attachments && message.attachments.size > 0) {
+        message.attachments.forEach(att => {
+          const name = (att.name || '').toLowerCase();
+          const url = (att.url || '').toLowerCase();
+          if (name.endsWith('.gif') || url.endsWith('.gif')) {
+            userPattern.stats.gifs += 1;
+          } else if (/(png|jpg|jpeg|webp)$/.test(name) || /(png|jpg|jpeg|webp)$/.test(url)) {
+            // 일반 이미지는 이모지/이미지로 따로 카운트하지 않음
+          } else {
+            // 기타 첨부
+          }
+        });
+      }
 
       // 최대 메시지 수 제한
       if (userPattern.messages.length > MAX_MESSAGE_HISTORY) {
@@ -727,37 +763,105 @@ client.on("messageCreate", async message => {
         }
 
         const enable = cmd === "감시활성화";
-        const serverName = args.join(" ");
-        
-        if (!serverName || serverName !== message.guild.name) {
-          return message.reply("⚠️ 정확한 서버 이름을 입력해주세요.");
-        }
+        const reason = args.join(" ") || null;
+        const guildIdLocal = message.guild.id;
+        const configLocal = loadData(guildIdLocal, "config");
 
-        surveillanceData.servers[message.guild.id] = {
-          enabled: enable,
-          name: serverName,
-          enabledAt: enable ? Date.now() : null
-        };
+        // 확인 버튼 생성
+        const row = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder().setCustomId("surv_confirm").setLabel(enable ? "활성화" : "비활성화").setStyle(enable ? ButtonStyle.Success : ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId("surv_cancel").setLabel("취소").setStyle(ButtonStyle.Secondary)
+          );
 
-        // 비활성화 시 해당 서버의 데이터 삭제
-        if (!enable) {
-          delete surveillanceData.userPatterns[message.guild.id];
-        }
+        const preview = `서버: ${message.guild.name}\n동작: ${enable ? "감시 활성화" : "감시 비활성화"}\n사유: ${reason || "없음"}`;
 
-        saveSurveillanceData();
+        const confirmMsg = await message.reply({ content: `⚠️ 아래 설정으로 진행하시겠습니까?\n${preview}`, components: [row] });
 
-        const embed = new EmbedBuilder()
-          .setTitle(`🔍 서버 감시 ${enable ? "활성화" : "비활성화"}`)
-          .setColor(enable ? 0x00ff00 : 0xff0000)
-          .setDescription(`서버 '${serverName}'의 감시가 ${enable ? "활성화" : "비활성화"}되었습니다.`)
-          .addFields(
-            { name: "서버 ID", value: message.guild.id, inline: true },
-            { name: "설정자", value: message.author.tag, inline: true },
-            { name: "설정 시각", value: new Date().toLocaleString("ko-KR"), inline: true }
-          )
-          .setTimestamp();
+        const collector = confirmMsg.createMessageComponentCollector({ time: 20000, max: 1, filter: i => i.user.id === message.author.id });
 
-        return message.reply({ embeds: [embed] });
+        collector.on("collect", async i => {
+          if (i.customId === "surv_cancel") {
+            await i.update({ content: "❌ 취소되었습니다.", components: [] });
+            return;
+          }
+
+          // 실행
+          if (enable) {
+            surveillanceData.servers[guildIdLocal] = {
+              enabled: true,
+              name: message.guild.name,
+              enabledAt: Date.now(),
+              enabledBy: message.author.id,
+              reason: reason
+            };
+            saveSurveillanceData();
+
+            const embedOk = new EmbedBuilder()
+              .setTitle("🔍 서버 감시 활성화 완료")
+              .setColor(0x00ff00)
+              .setDescription(`${message.guild.name} 서버의 감시가 활성화되었습니다.`)
+              .addFields(
+                { name: "서버 ID", value: guildIdLocal, inline: true },
+                { name: "설정자", value: message.author.tag, inline: true },
+                { name: "사유", value: reason || "없음", inline: true }
+              )
+              .setTimestamp();
+
+            await i.update({ content: null, embeds: [embedOk], components: [] });
+
+            // 로그 채널 전송
+            const logChannelId = configLocal.channels?.["로그"] || DEV_LOG_CHANNEL_ID;
+            const logCh = await message.guild.channels.fetch(logChannelId).catch(() => null);
+            if (logCh?.isTextBased()) logCh.send({ embeds: [embedOk] }).catch(() => {});
+
+            return;
+          } else {
+            // disable
+            const prev = surveillanceData.servers[guildIdLocal] || {};
+            surveillanceData.servers[guildIdLocal] = {
+              ...prev,
+              enabled: false,
+              disabledAt: Date.now(),
+              disabledBy: message.author.id,
+              disabledReason: reason
+            };
+
+            // 옵션: '초기화' 키워드가 있으면 수집 데이터 초기화
+            if ((reason || "").includes("초기화")) {
+              delete surveillanceData.userPatterns[guildIdLocal];
+            }
+
+            saveSurveillanceData();
+
+            const embedOk = new EmbedBuilder()
+              .setTitle("🔍 서버 감시 비활성화 완료")
+              .setColor(0xff0000)
+              .setDescription(`${message.guild.name} 서버의 감시가 비활성화되었습니다.`)
+              .addFields(
+                { name: "서버 ID", value: guildIdLocal, inline: true },
+                { name: "설정자", value: message.author.tag, inline: true },
+                { name: "사유", value: reason || "없음", inline: true }
+              )
+              .setTimestamp();
+
+            await i.update({ content: null, embeds: [embedOk], components: [] });
+
+            const logChannelId = configLocal.channels?.["로그"] || DEV_LOG_CHANNEL_ID;
+            const logCh = await message.guild.channels.fetch(logChannelId).catch(() => null);
+            if (logCh?.isTextBased()) logCh.send({ embeds: [embedOk] }).catch(() => {});
+
+            return;
+          }
+        });
+
+        collector.on("end", (collected, reasonEnd) => {
+          if (reasonEnd === "time") {
+            confirmMsg.edit({ content: "⏳ 시간이 초과되어 취소되었습니다.", components: [] }).catch(() => {});
+          }
+        });
+
+        return;
       }
 
       case "감시현황": {
@@ -771,8 +875,12 @@ client.on("messageCreate", async message => {
         }
 
         const userPatterns = Object.entries(guildPattern);
-        const totalUsers = userPatterns.length;
-        const totalMessages = userPatterns.reduce((sum, [_, data]) => sum + data.messages.length, 0);
+  const totalUsers = userPatterns.length;
+  const totalMessages = userPatterns.reduce((sum, [_, data]) => sum + (data.messages?.length||0), 0);
+  const totalStickers = userPatterns.reduce((sum, [_, data]) => sum + (data.stats?.stickers||0), 0);
+  const totalEmojis = userPatterns.reduce((sum, [_, data]) => sum + (data.stats?.emojis||0), 0);
+  const totalGifs = userPatterns.reduce((sum, [_, data]) => sum + (data.stats?.gifs||0), 0);
+  const totalLinks = userPatterns.reduce((sum, [_, data]) => sum + (data.stats?.links||0), 0);
 
         const embed = new EmbedBuilder()
           .setTitle("📊 서버 감시 현황")
@@ -781,6 +889,10 @@ client.on("messageCreate", async message => {
           .addFields(
             { name: "감시 중인 유저 수", value: totalUsers.toString(), inline: true },
             { name: "수집된 총 메시지", value: totalMessages.toString(), inline: true },
+            { name: "수집된 스티커", value: totalStickers.toString(), inline: true },
+            { name: "수집된 이모지(추정)", value: totalEmojis.toString(), inline: true },
+            { name: "수집된 GIF", value: totalGifs.toString(), inline: true },
+            { name: "수집된 링크", value: totalLinks.toString(), inline: true },
             { name: "활성화 일시", value: new Date(surveillanceData.servers[message.guild.id].enabledAt).toLocaleString("ko-KR"), inline: true }
           );
 
@@ -802,6 +914,34 @@ client.on("messageCreate", async message => {
             }))
           });
         }
+
+        return message.reply({ embeds: [embed] });
+      }
+
+      case "서버정보": {
+        // 누구나 볼 수 있도록 설정
+        const configData = loadData(guildId, "config");
+        const defaultRole = loadData(guildId, "defaultRole");
+
+        // 관리자 목록 수집
+        const admins = guild.members.cache
+          .filter(m => m.permissions.has("Administrator"))
+          .map(m => `${m.user.tag}`)
+          .slice(0, 25);
+
+        const owner = guild.ownerId ? (guild.members.cache.get(guild.ownerId)?.user.tag || guild.ownerId) : "알 수 없음";
+
+        const embed = new EmbedBuilder()
+          .setTitle(`🏷️ 서버 정보: ${guild.name}`)
+          .setColor(0x00cc99)
+          .addFields(
+            { name: "서버명", value: guild.name, inline: true },
+            { name: "서버 소유자", value: owner, inline: true },
+            { name: "기본 역할", value: defaultRole?.id ? `<@&${defaultRole.id}>` : "설정되지 않음", inline: true },
+            { name: "채널 설정(예시)", value: Object.entries(configData.channels || {}).map(([k,v])=>`${k}: <#${v}>`).join("\n") || "설정 없음", inline: false },
+            { name: `관리자 (${admins.length})`, value: admins.join("\n") || "없음", inline: false }
+          )
+          .setTimestamp();
 
         return message.reply({ embeds: [embed] });
       }
@@ -1604,6 +1744,7 @@ client.on("messageCreate", async message => {
                     "`&도움말 아이템` — 아이템 시스템",
                     "`&도움말 관리` — 서버 관리",
                     "`&도움말 채널` — 채널 설정",
+                    "`&도움말 감시` — 서버 감시(감시활성화/감시현황)",
                     "`&도움말 개발자` — 개발자 전용"
                   ].join("\n"),
                   inline: false
@@ -1672,6 +1813,27 @@ client.on("messageCreate", async message => {
                   value: [
                     "`&맨인블랙 <숫자>` — 최근 메시지 삭제 (1~100개)",
                     "`&시공의폭풍` — 채널 메시지 대량 삭제 (확인 필요)"
+                    ,"`&감시활성화 [사유]` — 서버 감시 시작 (관리자 전용, 확인 버튼)",
+                    "`&감시비활성화 [사유]` — 서버 감시 종료 (사유에 '초기화' 포함 시 데이터 삭제)",
+                    "`&감시현황` — 수집된 통계 확인 (관리자 전용)",
+                    "`&서버정보` — 서버 기본 정보 확인"
+                  ].join("\n"),
+                  inline: false
+                }
+              ),
+
+            감시: new EmbedBuilder()
+              .setTitle("🔍 서버 감시 도움말")
+              .setColor(0x8855ff)
+              .setDescription("서버의 채팅/스티커/이미지/링크 등을 수집하여 통계를 제공합니다. (관리자 전용)")
+              .addFields(
+                {
+                  name: "기본 명령어",
+                  value: [
+                    "`&감시활성화 [사유]` — 감시 시작 (확인 버튼)",
+                    "`&감시비활성화 [사유]` — 감시 종료 (사유에 '초기화' 포함 시 데이터 삭제)",
+                    "`&감시현황` — 수집된 통계 요약 확인",
+                    "`&서버정보` — 서버의 채널/역할/관리자/소유자 정보 확인"
                   ].join("\n"),
                   inline: false
                 }
