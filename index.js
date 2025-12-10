@@ -1437,42 +1437,73 @@ client.on("messageCreate", async message => {
         );
         }
 
-        case "성향기준지정": {
+        case "크기기준지정": {
           if (!message.member.permissions.has("Administrator")) {
               return message.reply("관리자만 사용할 수 있는 명령어입니다.");
           }
 
           const filter = m => m.author.id === author.id;
 
-          // Step 1: 숫자 입력
-          await message.reply("기준이 될 숫자를 입력해주세요. (예: 15 또는 17.5)");
+          await message.reply(
+              "크기(cm)와 역할명을 입력해주세요.\n" +
+              "예: `15cm BigSize`\n" +
+              "예: `17.5cm Giant`"
+          );
 
-          const collectedNum = await message.channel.awaitMessages({ filter, max: 1 });
-          if (!collectedNum.size) return message.reply("입력 없음. 취소되었습니다.");
+          // 관리자 입력 대기 (시간 제한 없음)
+          const collected = await message.channel.awaitMessages({ filter, max: 1 });
+          if (!collected.size) return message.reply("입력 없음. 취소되었습니다.");
 
-          const numberInput = collectedNum.first().content.trim();
-          const num = parseFloat(numberInput);
-          if (isNaN(num) || num <= 0) return message.reply("올바른 숫자를 입력해주세요.");
+          const input = collected.first().content.trim();
 
-          // Step 2: 역할명 입력
-          await message.reply("해당 숫자 이상일 때 부여할 역할명을 입력해주세요.");
+          // 정규식: 숫자(소수점 가능) + cm + 역할명
+          const regex = /^(\d+(\.\d+)?)\s*cm\s+(.+)$/i;
+          const match = input.match(regex);
 
-          const collectedRole = await message.channel.awaitMessages({ filter, max: 1 });
-          if (!collectedRole.size) return message.reply("입력 없음. 취소되었습니다.");
+          if (!match) {
+              return message.reply("형식이 잘못되었습니다.\n예: `17.5cm Giant`");
+          }
 
-          const roleName = collectedRole.first().content.trim();
+          const sizeValue = parseFloat(match[1]); // ex: 17.5
+          const roleName = match[3].trim();       // ex: Giant
 
-          // JSON 데이터 불러오기
+          if (isNaN(sizeValue) || sizeValue <= 0) {
+              return message.reply("올바른 cm 값을 입력해주세요.");
+          }
+
+          // === 역할 생성 또는 조회 ===
+          let role = guild.roles.cache.find(r => 
+              r.name.toLowerCase() === roleName.toLowerCase()
+          );
+
+          if (!role) {
+              try {
+                  role = await guild.roles.create({
+                      name: roleName,
+                      color: "Random",
+                      reason: "크기 기준 자동 생성"
+                  });
+              } catch (err) {
+                  console.error(err);
+                  return message.reply("역할 생성 중 오류가 발생했습니다.");
+              }
+          }
+
+          // === JSON 저장 ===
           const sizeCriteria = loadData(guildId, "sizeCriteria") || {};
-          if (!sizeCriteria[guildId]) sizeCriteria[guildId] = {};
+          if (!sizeCriteria[guildId]) sizeCriteria[guildId] = [];
 
-          // 저장
-          sizeCriteria[guildId][num] = roleName;
+          sizeCriteria[guildId].push({
+              min: sizeValue,
+              max: null,      // n 이상 조건
+              role: roleName
+          });
+
           saveData(guildId, "sizeCriteria", sizeCriteria);
 
           return message.reply(
-              `기준 등록 완료!\n` +
-              `• 기준 크기: ${num}cm 이상\n` +
+              `크기 기준 등록 완료!\n` +
+              `• ${sizeValue}cm 이상\n` +
               `• 지급 역할: ${roleName}`
           );
       }
