@@ -1437,6 +1437,46 @@ client.on("messageCreate", async message => {
         );
         }
 
+        case "성향기준지정": {
+          if (!message.member.permissions.has("Administrator")) {
+              return message.reply("관리자만 사용할 수 있는 명령어입니다.");
+          }
+
+          const filter = m => m.author.id === author.id;
+
+          // Step 1: 숫자 입력
+          await message.reply("기준이 될 숫자를 입력해주세요. (예: 15 또는 17.5)");
+
+          const collectedNum = await message.channel.awaitMessages({ filter, max: 1 });
+          if (!collectedNum.size) return message.reply("입력 없음. 취소되었습니다.");
+
+          const numberInput = collectedNum.first().content.trim();
+          const num = parseFloat(numberInput);
+          if (isNaN(num) || num <= 0) return message.reply("올바른 숫자를 입력해주세요.");
+
+          // Step 2: 역할명 입력
+          await message.reply("해당 숫자 이상일 때 부여할 역할명을 입력해주세요.");
+
+          const collectedRole = await message.channel.awaitMessages({ filter, max: 1 });
+          if (!collectedRole.size) return message.reply("입력 없음. 취소되었습니다.");
+
+          const roleName = collectedRole.first().content.trim();
+
+          // JSON 데이터 불러오기
+          const sizeCriteria = loadData(guildId, "sizeCriteria") || {};
+          if (!sizeCriteria[guildId]) sizeCriteria[guildId] = {};
+
+          // 저장
+          sizeCriteria[guildId][num] = roleName;
+          saveData(guildId, "sizeCriteria", sizeCriteria);
+
+          return message.reply(
+              `기준 등록 완료!\n` +
+              `• 기준 크기: ${num}cm 이상\n` +
+              `• 지급 역할: ${roleName}`
+          );
+      }
+
         // === 아이템 시스템 ===
         case "아이템":{
           if(args.length<1) return message.reply("⚠️ 사용법: !아이템 <제작/등급/강화/판매/구입/시장/목록>");
@@ -1485,7 +1525,7 @@ client.on("messageCreate", async message => {
               const roll=Math.random();
               const destroyRate=getDestroyChance(item.plus);
               const successRate=getUpgradeSuccessRate(item.plus);
-              
+
               if(roll < successRate){
                 item.plus+=1;
                 // 낮은 확률로 등급 상승
