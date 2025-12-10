@@ -1279,9 +1279,9 @@ client.on("messageCreate", async message => {
           return message.channel.send(`🕶 최근 ${deletedMessages?.size || 0}개의 메시지를 삭제했습니다.`);
         }
         // ===== 작성 기능 =====
-      case "작성을": {
+      case "성향작성": {
         const filter = m => m.author.id === author.id;
-        message.reply("작성 양식에 맞게 입력해주세요.\n형식: `cm-포지션-역할`\n예: `cm-T-D` 또는 `cm-Top-Dom`");
+        message.reply("작성 양식에 맞게 입력해주세요.\n형식: `자지cm-포지션-역할`\n예: `cm-T-D` 또는 `cm-Top-Dom`");
 
         const collected = await message.channel.awaitMessages({ filter, max: 1, time: 20000 }).catch(() => null);
         if (!collected || collected.size === 0) {
