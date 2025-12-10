@@ -1279,144 +1279,163 @@ client.on("messageCreate", async message => {
           return message.channel.send(`🕶 최근 ${deletedMessages?.size || 0}개의 메시지를 삭제했습니다.`);
         }
         // ===== 작성 기능 =====
-      case "성향작성": {
-        const filter = m => m.author.id === author.id;
-        message.reply("작성 양식에 맞게 입력해주세요.\n형식: `자지cm-포지션-역할`\n예: `cm-T-D` 또는 `cm-Top-Dom`");
+        case "성향작성": {
+          const filter = m => m.author.id === author.id;
 
-        const collected = await message.channel.awaitMessages({ filter, max: 1, time: 20000 }).catch(() => null);
-        if (!collected || collected.size === 0) {
-          return message.reply("시간이 초과되었습니다. 다시 시도해주세요.");
-        }
-
-        const input = collected.first().content.trim();
-        const parts = input.split("-");
-
-        if (parts.length !== 3) {
-          return message.reply("형식이 잘못되었습니다.\n예: `cm-T-D` 또는 `cm-Top-Dom`");
-        }
-
-        let [size, position, roleType] = parts.map(v => v.trim());
-
-        // ===== 1) cm 체크 =====
-        if (size.toLowerCase() !== "cm") {
-          return message.reply("첫 번째 항목은 반드시 `cm` 이어야 합니다.");
-        }
-
-        // ===== 2) 포지션 매핑 =====
-        const posLower = position.toLowerCase();
-        const posMap = {
-          "t": "Top", "top": "Top",
-          "b": "Bottom", "bottom": "Bottom",
-          "a": "All", "all": "All",
-          "n": "Not", "not": "Not",
-        };
-
-        if (!posMap[posLower]) {
-          return message.reply("포지션은 T/Top, B/Bottom, A/All, N/Not 중 하나여야 합니다.");
-        }
-
-        const finalPosition = posMap[posLower];
-
-        // ===== 3) 역할 매핑 =====
-        const roleLower = roleType.toLowerCase();
-        const roleMap = {
-          "d": "Dom", "dom": "Dom",
-          "s": "Sub", "sub": "Sub",
-        };
-
-        if (!roleMap[roleLower]) {
-          return message.reply("역할은 D/Dom 또는 S/Sub 중 하나여야 합니다.");
-        }
-
-        const finalRoleType = roleMap[roleLower];
-
-        // ===== JSON 저장 =====
-        const formData = loadData(guildId, "formData") || {};
-        formData[author.id] = {
-          size: "cm",
-          position: finalPosition,
-          role: finalRoleType,
-          timestamp: Date.now(),
-          username: author.tag
-        };
-        saveData(guildId, "formData", formData);
-
-        const member = await guild.members.fetch(author.id);
-
-        // ============================================================
-        // ===== 역할 지급 함수 (없으면 생성) ===========================
-        // ============================================================
-        async function getOrCreateRole(roleName) {
-          // 1) 기존 역할 검색
-          let role = guild.roles.cache.find(r =>
-            r.name.toLowerCase().includes(roleName.toLowerCase())
+          message.reply(
+              "작성 양식에 맞게 입력해주세요.\n" +
+              "형식: `14cm-b-s` 또는 `17.5cm-t-d`\n" +
+              "입력 제한 시간은 없습니다."
           );
 
-          // 2) 없으면 새 역할 생성
-          if (!role) {
-            try {
-              role = await guild.roles.create({
-                name: roleName,
-                color: "Random",
-                reason: "자동 역할 생성"
+          // 입력 시간 무제한 (max: 1, time 없음)
+          const collected = await message.channel.awaitMessages({ filter, max: 1 }).catch(() => null);
+
+          if (!collected || collected.size === 0) {
+              return message.reply("입력을 감지하지 못했습니다. 다시 시도해주세요.");
+          }
+
+          const input = collected.first().content.trim();
+
+          // ===== 정규식: 숫자 + (optional 소수점1자리) + cm - 포지션 - 역할 =====
+          const regex = /^(\d+(\.\d)?)cm-([a-zA-Z]+)-([a-zA-Z]+)$/i;
+          const match = input.match(regex);
+
+          if (!match) {
+              return message.reply(
+                  "형식이 잘못되었습니다.\n예: `14cm-b-s`, `17.5cm-t-d` (소수점 1자리까지 허용)"
+              );
+          }
+
+          const sizeValue = match[1];
+          const position = match[3];
+          const roleType = match[4];
+          const finalSize = `${sizeValue}cm`;
+
+          // ===== 포지션 매핑 =====
+          const posLower = position.toLowerCase();
+          const posMap = {
+              "t": "Top", "top": "Top",
+              "b": "Bottom", "bottom": "Bottom",
+              "a": "All", "all": "All",
+              "n": "Not", "not": "Not",
+          };
+
+          if (!posMap[posLower]) {
+              return message.reply("포지션은 T/Top, B/Bottom, A/All, N/Not 중 하나여야 합니다.");
+          }
+
+          const finalPosition = posMap[posLower];
+
+          // ===== 역할 매핑 =====
+          const roleLower = roleType.toLowerCase();
+          const roleMap = {
+              "d": "Dom", "dom": "Dom",
+              "s": "Sub", "sub": "Sub",
+          };
+
+          if (!roleMap[roleLower]) {
+              return message.reply("역할은 D/Dom 또는 S/Sub 중 하나여야 합니다.");
+          }
+
+          const finalRoleType = roleMap[roleLower];
+
+          // ===== JSON 저장 =====
+          const formData = loadData(guildId, "formData") || {};
+          formData[author.id] = {
+              size: finalSize,
+              position: finalPosition,
+              role: finalRoleType,
+              timestamp: Date.now(),
+              username: author.tag
+          };
+          saveData(guildId, "formData", formData);
+
+          const member = await guild.members.fetch(author.id);
+
+          // ===== 역할 생성/조회 =====
+          async function getOrCreateRole(roleName) {
+              let role = guild.roles.cache.find(r =>
+                  r.name.toLowerCase().includes(roleName.toLowerCase())
+              );
+
+              if (!role) {
+                  try {
+                      role = await guild.roles.create({
+                          name: roleName,
+                          color: "Random",
+                          reason: "자동 역할 생성"
+                      });
+                  } catch (err) {
+                      console.error(err);
+                      return null;
+                  }
+              }
+              return role;
+          }
+
+          // ===== 포지션 역할 지급 =====
+          const positionRole = await getOrCreateRole(finalPosition);
+          if (!positionRole) {
+              return message.reply(`포지션 역할 '${finalPosition}' 생성에 실패했습니다.`);
+          }
+
+          if (!member.roles.cache.has(positionRole.id)) {
+              await member.roles.add(positionRole).catch(err => {
+                  console.error(err);
+                  return message.reply("포지션 역할 지급 중 오류가 발생했습니다.");
               });
-            } catch (err) {
-              console.error(err);
-              return null;
+          }
+
+          // ===== Dom/Sub 역할 지급 =====
+          const domSubRole = await getOrCreateRole(finalRoleType);
+          if (!domSubRole) {
+              return message.reply(`Dom/Sub 역할 '${finalRoleType}' 생성에 실패했습니다.`);
+          }
+
+          if (!member.roles.cache.has(domSubRole.id)) {
+              await member.roles.add(domSubRole).catch(err => {
+                  console.error(err);
+                  return message.reply("Dom/Sub 역할 지급 중 오류가 발생했습니다.");
+              });
+          }
+
+          return message.reply(
+              `작성 완료!\n` +
+              `저장됨: \`${finalSize}-${finalPosition}-${finalRoleType}\`\n` +
+              `포지션 역할: <@&${positionRole.id}>\n` +
+              `Dom/Sub 역할: <@&${domSubRole.id}>`
+          );
+        }
+        case "성향조회": {
+        const guildRoles = guild.roles.cache;
+
+        // 포지션 목록
+        const positions = ["Top", "Bottom", "All", "Not"];
+
+        // 결과 저장
+        const result = [];
+
+        for (const pos of positions) {
+            // 역할 찾기 (이름에 pos가 포함된 역할)
+            const role = guildRoles.find(r =>
+                r.name.toLowerCase().includes(pos.toLowerCase())
+            );
+
+            if (role) {
+                // 멤버 수 가져오기
+                const count = role.members.size;
+                result.push(`${pos} : ${count}명`);
+            } else {
+                result.push(`${pos} : 역할 없음`);
             }
-          }
-
-          return role;
         }
 
-        // ============================================================
-        // ===== 4) 포지션 역할 지급 (자동 생성 포함) =====================
-        // ============================================================
-        const positionRole = await getOrCreateRole(finalPosition);
-        if (!positionRole) {
-          return message.reply(`포지션 역할 '${finalPosition}' 생성에 실패했습니다.`);
-        }
-
-        if (!member.roles.cache.has(positionRole.id)) {
-          try {
-            await member.roles.add(positionRole);
-          } catch (err) {
-            console.error(err);
-            return message.reply("포지션 역할 지급 중 오류가 발생했습니다.");
-          }
-        } else {
-          message.reply(`이미 포지션 역할 <@&${positionRole.id}>을 보유하고 있습니다.`);
-        }
-
-        // ============================================================
-        // ===== 5) DOM/SUB 역할 지급 (자동 생성 포함) ===================
-        // ============================================================
-        const domSubRole = await getOrCreateRole(finalRoleType);
-        if (!domSubRole) {
-          return message.reply(`Dom/Sub 역할 '${finalRoleType}' 생성에 실패했습니다.`);
-        }
-
-        if (!member.roles.cache.has(domSubRole.id)) {
-          try {
-            await member.roles.add(domSubRole);
-          } catch (err) {
-            console.error(err);
-            return message.reply("Dom/Sub 역할 지급 중 오류가 발생했습니다.");
-          }
-        } else {
-          message.reply(`이미 Dom/Sub 역할 <@&${domSubRole.id}>을 보유하고 있습니다.`);
-        }
-
-        // ============================================================
-        // ===== 완료 메시지 ===========================================
-        // ============================================================
         return message.reply(
-          `작성 완료!\n` +
-          `저장됨: \`cm-${finalPosition}-${finalRoleType}\`\n` +
-          `포지션 역할: <@&${positionRole.id}>\n` +
-          `Dom/Sub 역할: <@&${domSubRole.id}>`
+            "**포지션 현황 조회**\n" +
+            result.join("\n")
         );
-      }
+        }
 
         // === 아이템 시스템 ===
         case "아이템":{
@@ -1466,15 +1485,7 @@ client.on("messageCreate", async message => {
               const roll=Math.random();
               const destroyRate=getDestroyChance(item.plus);
               const successRate=getUpgradeSuccessRate(item.plus);
-
-              if(roll < destroyRate){
-                // 파괴
-                itemsData[author.id] = itemsData[author.id].filter(i=>!(i.name===itemName && i.owner===author.id));
-                saveData(guildId,"points",pointsData);
-                saveData(guildId,"items",itemsData);
-                return message.reply(`💥 "${itemName}" 강화 실패! 아이템이 파괴되었습니다.`);
-              }
-
+              
               if(roll < successRate){
                 item.plus+=1;
                 // 낮은 확률로 등급 상승
@@ -1484,7 +1495,14 @@ client.on("messageCreate", async message => {
                 saveData(guildId,"points",pointsData);
                 saveData(guildId,"items",itemsData);
                 return message.reply(`🔧 "${itemName}" 강화 성공! +${item.plus}, 등급: ${item.grade}`);
-              } else {
+              } 
+              if(roll < destroyRate){
+                // 파괴
+                itemsData[author.id] = itemsData[author.id].filter(i=>!(i.name===itemName && i.owner===author.id));
+                saveData(guildId,"points",pointsData);
+                saveData(guildId,"items",itemsData);
+                return message.reply(`💥 "${itemName}" 강화 실패! 아이템이 파괴되었습니다.`);
+              }else {
                 // 실패 시 하락
                 if(item.plus>0) item.plus-=1;
                 if(item.plus<0) item.plus=0;
